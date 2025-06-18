@@ -1,0 +1,7 @@
+python-telegram-bot==22.1
+requests
+beautifulsoup4
+PyMuPDF
+python-dotenv
+openai
+apscheduler
