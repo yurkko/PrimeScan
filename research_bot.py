@@ -1,4 +1,3 @@
-```python
 import os
 import requests
 import fitz  # PyMuPDF
@@ -19,10 +18,6 @@ load_dotenv()
 BOT_TOKEN      = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ADMIN_ID       = int(os.getenv("ADMIN_ID"))
-
-# --- Logging ---
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # --- Clear any existing webhook synchronously ---
 sync_bot = Bot(BOT_TOKEN)
@@ -198,4 +193,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
