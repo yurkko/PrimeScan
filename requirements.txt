@@ -1,4 +1,4 @@
-python-telegram-bot[job-queue]==22.1
+python-telegram-bot==20.6
 requests
 beautifulsoup4
 PyMuPDF
