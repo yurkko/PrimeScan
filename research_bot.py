@@ -204,5 +204,5 @@ def main():
     time.sleep(10)
     app.run_polling(drop_pending_updates=True)
 
-if name == "main":
+if name == "__main__":
     main()
