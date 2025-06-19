@@ -1,200 +1,131 @@
 import os
-import requests
-import fitz  # PyMuPDF
 import logging
-from bs4 import BeautifulSoup
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-)
 from dotenv import load_dotenv
-from openai import OpenAI
-import asyncio
+from fastapi import FastAPI, Request
+from telegram import Update, Bot
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+import openai
+import requests
+from bs4 import BeautifulSoup
+# Імпорт ваших існуючих модулів моніторингу та обробки (ADMISMonitor, SaxoMonitor тощо)
+# from admis_monitor import ADMISMonitor
+# from saxo_monitor import SaxoMonitor
 
-# --- Load environment variables ---
+# Завантаження змінних середовища з файлу .env
 load_dotenv()
-BOT_TOKEN      = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ADMIN_ID       = int(os.getenv("ADMIN_ID"))
+ADMIN_ID = os.getenv("ADMIN_ID")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+PORT = int(os.getenv("PORT", 8080))
 
-# --- Logging ---
-logging.basicConfig(level=logging.INFO)
+# Налаштування логування
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
-# --- OpenAI client ---
-client = OpenAI(api_key=OPENAI_API_KEY)
+# Налаштування ключа OpenAI
+openai.api_key = OPENAI_API_KEY
 
-# --- Monitors ---
-class ADMISMonitor:
-    BASE_URL = "https://www.admis.com"
-    LIST_URL = BASE_URL + "/market-information/written-commentary/"
+# Ініціалізація FastAPI-додатку
+app = FastAPI()
 
-    def __init__(self):
-        self.seen = set()
+# Ініціалізація Telegram-бота з ApplicationBuilder
+application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    def check_new(self):
-        try:
-            resp = requests.get(self.LIST_URL, headers={'User-Agent': 'Mozilla/5.0'})
-            resp.raise_for_status()
-        except Exception as e:
-            logger.error("Failed to fetch ADMIS page: %s", e)
-            return []
-        soup = BeautifulSoup(resp.text, 'parser')
-        new = []
-        for h3 in soup.find_all("h3"):
-            a = h3.find('a')
-            if not a:
-                continue
-            title = a.get_text(strip=True)
-            href = a['href']
-            url = href if href.startswith("http") else self.BASE_URL + href
-            date_tag = h3.find_next_sibling("p")
-            date = date_tag.get_text(strip=True) if date_tag else ""
-            source = "ADMIS Written Commentary"
-            if url not in self.seen:
-                self.seen.add(url)
-                new.append({"title": title, "url": url, "date": date, "source": source})
-        return new
+# ------------------ Обробники команд ------------------
 
-class SaxoMonitor:
-    INSIGHTS_URL = "https://www.home.saxo/insights"
-    BASE_URL     = "https://www.home.saxo"
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробник команди /start."""
+    user = update.effective_user
+    await context.bot.send_message(chat_id=update.effective_chat.id,
+                                   text=f"Привіт, {user.first_name}! Я готовий.")
 
-    def __init__(self):
-        self.seen = set()
-
-    def check_new(self):
-        try:
-            resp = requests.get(self.INSIGHTS_URL, headers={'User-Agent': 'Mozilla/5.0'})
-            resp.raise_for_status()
-        except Exception as e:
-            logger.error("Failed to fetch Saxo Insights page: %s", e)
-            return []
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        new = []
-        for a in soup.find_all("a", href=True):
-            href = a['href']
-            if "/content/articles/" not in href:
-                continue
-            title = a.get_text(strip=True)
-            if not title or len(title) < 5:
-                continue
-            url = href if href.startswith("http") else self.BASE_URL + href
-            if url in self.seen:
-                continue
-            self.seen.add(url)
-            new.append({"title": title, "url": url, "date": "", "source": "Saxo Bank Research"})
-        return new
-
-# --- Globals ---
-pending_articles = {}
-
-# --- /start handler ---
-async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("Unauthorized.")
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Приклад обмеження доступу за ADMIN_ID."""
+    user_id = str(update.effective_user.id)
+    if user_id != ADMIN_ID:
+        await context.bot.send_message(chat_id=update.effective_chat.id, 
+                                       text="Ви не маєте доступу до цієї команди.")
         return
-    await update.message.reply_text("Bot is running. I will notify you of new research articles.")
+    await context.bot.send_message(chat_id=update.effective_chat.id, 
+                                   text="Команда доступна адміністратору.")
 
-# --- Button callback ---
-async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    if not data.startswith("INSIGHTS|"):
+# ------------------ Логіка моніторингу (заглушки) ------------------
+# Тут потрібно вставити реальну логіку ваших класів/функцій ADMISMonitor, SaxoMonitor тощо.
+
+async def check_admis(context: ContextTypes.DEFAULT_TYPE):
+    # Приклад функції моніторингу ADMIS (запуск оn та зміну стратегії)
+    # admi_monitor = ADMISMonitor()
+    # new_reports = admi_monitor.check_updates()
+    # for report in new_reports:
+    #     summary = admi_monitor.summarize_report(report)
+    #     await context.bot.send_message(chat_id=ADMIN_ID, text=summary)
+    pass
+
+async def check_saxo(context: ContextTypes.DEFAULT_TYPE):
+    # Приклад функції моніторингу Saxo
+    # saxo_monitor = SaxoMonitor()
+    # updates = saxo_monitor.check_updates()
+    # for update_text in updates:
+    #     await context.bot.send_message(chat_id=ADMIN_ID, text=update_text)
+    pass
+
+# ------------------ Команди для ручного запуску (якщо потрібно) ------------------
+
+async def admis_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ручний запуск перевірки ADMIS (тільки для адміністратора)."""
+    user_id = str(update.effective_user.id)
+    if user_id != ADMIN_ID:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Немає доступу.")
         return
-    art_id = data.split("|", 1)[1]
-    article = pending_articles.get(art_id)
-    if not article:
-        await query.edit_message_text("Article info not found.")
+    # admi_monitor = ADMISMonitor()
+    # summary = admi_monitor.get_latest_summary()
+    # await update.message.reply_text(summary)
+    await update.message.reply_text("ADMIS summary готовий (заглушка).")
+
+async def saxo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ручний запуск перевірки Saxo (тільки для адміністратора)."""
+    user_id = str(update.effective_user.id)
+    if user_id != ADMIN_ID:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Немає доступу.")
         return
+    # saxo_monitor = SaxoMonitor()
+    # summary = saxo_monitor.get_latest_summary()
+    # await update.message.reply_text(summary)
+    await update.message.reply_text("Saxo summary готовий (заглушка).")
 
-    title, url, source, date = (
-        article["title"], article["url"], article["source"], article["date"]
-    )
+# ------------------ Обробник довільних повідомлень ------------------
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Проста ехо-функція для тестування."""
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=update.message.text)
 
-    # Fetch full content
-    try:
-        resp = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-        resp.raise_for_status()
-    except Exception as e:
-        logger.error("Failed to fetch article: %s", e)
-        await query.edit_message_text("Failed to load article content.")
-        return
+# ------------------ Додавання обробників ------------------
+application.add_handler(CommandHandler("start", start_command))
+application.add_handler(CommandHandler("admin", admin_command))
+application.add_handler(CommandHandler("admis", admis_command))
+application.add_handler(CommandHandler("saxo", saxo_command))
+application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), echo))
 
-    content = ""
-    if url.lower().endswith(".pdf"):
-        try:
-            doc = fitz.open(stream=resp.content, filetype="pdf")
-            for page in doc:
-                content += page.get_text("text")
-        except Exception as e:
-            logger.error("PyMuPDF error: %s", e)
-    else:
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        content = "\n".join(p.get_text() for p in soup.find_all("p"))
+# ------------------ Webhook-ендпоїнт FastAPI ------------------
+@app.post(f"/{TELEGRAM_BOT_TOKEN}")
+async def telegram_webhook(request: Request):
+    """Отримує оновлення від Telegram і передає їх в обробник python-telegram-bot."""
+    data = await request.json()
+    update = Update.de_json(data, Bot(TELEGRAM_BOT_TOKEN))
+    await application.process_update(update)
+    return {"ok": True}
 
-    if not content.strip():
-        await query.edit_message_text("No text extracted.")
-        return
-
-    # Summarize via OpenAI
-    prompt = (
-        "Summarize the following research article with sections:\n"
-        "Title, Key points, Impact on markets, Source, Date, Link.\n\n"
-        f"Title: {title}\nSource: {source}\nDate: {date}\nLink: {url}\n\n"
-        "Article Text:\n" + content
-    )
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1
-        )
-        summary = response.choices[0].message.content
-    except Exception as e:
-        logger.error("OpenAI error: %s", e)
-        await query.edit_message_text("Error summarizing.")
-        return
-
-    await query.edit_message_text(text=summary, parse_mode='Markdown')
-
-# --- Periodic scrape job ---
-async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
-    bot = context.bot
-    monitors = [ADMISMonitor(), SaxoMonitor()]
-    for mon in monitors:
-        for art in mon.check_new():
-            title, url, date, source = art["title"], art["url"], art["date"], art["source"]
-            msg = (
-                f"📌 *New research from {source}*\n"
-                f"📅 {date or 'Unknown'}\n"
-                f"📰 Title: {title}\n"
-                f"🔗 [Read the original]({url})\n\n"
-                "⬇️ Click below for a concise analysis:"
-            )
-            art_id = f"{source}_{hash(url)}"
-            pending_articles[art_id] = art
-            kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🧠 Load Insights", callback_data=f"INSIGHTS|{art_id}")]
-            ])
-            await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=kb, parse_mode='Markdown')
-            logger.info("Alert sent: %s", title)
-
-# --- Entrypoint ---
-async def run_bot():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    await app.bot.delete_webhook()
-    app.add_handler(CommandHandler("start", start_bot))
-    app.add_handler(CallbackQueryHandler(insights_callback, pattern=r"^INSIGHTS\|"))
-    app.job_queue.run_repeating(check_sites_callback, interval=600, first=5)
-    await app.run_polling(drop_pending_updates=True)
-
-def main():
-    asyncio.run(run_bot())
-
+# ------------------ Запуск вебхука ------------------
 if __name__ == "__main__":
-    main()
+    # Встановлюємо вебхук у Telegram
+    webhook_full_url = WEBHOOK_URL.rstrip("/") + "/" + TELEGRAM_BOT_TOKEN
+    # Виконуємо запуск вебхука (налаштовує Bot.set_webhook() та запускає вебсервер)
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=TELEGRAM_BOT_TOKEN,
+        webhook_url=webhook_full_url,
+        # Додаткові параметри (максимум 40 з'єднань, ключ/сертифікат не потрібні при зовнішньому HTTPS)
+    )
