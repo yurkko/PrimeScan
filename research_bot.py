@@ -10,6 +10,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     ContextTypes,
 )
+import time
 from dotenv import load_dotenv
 import openai
 
