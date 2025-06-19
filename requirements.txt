@@ -2,7 +2,7 @@ python-telegram-bot[webhooks]>=20.0
 fastapi
 uvicorn
 python-dotenv
-openai
+openai>=1.0.0
 requests
 beautifulsoup4
 PyMuPDF
