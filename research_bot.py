@@ -11,6 +11,7 @@ from telegram.ext import (
     ContextTypes,
 )
 import time
+import json  # Added for JSON file handling
 from dotenv import load_dotenv
 import openai
 
@@ -30,7 +31,11 @@ class ADMISMonitor:
     LIST_URL = BASE_URL + "/market-information/written-commentary/"
 
     def __init__(self):
-        self.seen = set()
+        try:
+            with open("seen_urls.txt", "r") as f:
+                self.seen = set(json.load(f))
+        except (FileNotFoundError, json.JSONDecodeError):
+            self.seen = set()
 
     def check_new(self):
         try:
@@ -53,6 +58,8 @@ class ADMISMonitor:
             source   = "ADMIS Written Commentary"
             if url not in self.seen:
                 self.seen.add(url)
+                with open("seen_urls.txt", "w") as f:
+                    json.dump(list(self.seen), f)
                 new.append({"title": title, "url": url, "date": date, "source": source})
         return new
 
@@ -61,7 +68,11 @@ class SaxoMonitor:
     BASE_URL     = "https://www.home.saxo"
 
     def __init__(self):
-        self.seen = set()
+        try:
+            with open("seen_urls.txt", "r") as f:
+                self.seen = set(json.load(f))
+        except (FileNotFoundError, json.JSONDecodeError):
+            self.seen = set()
 
     def check_new(self):
         try:
@@ -80,10 +91,11 @@ class SaxoMonitor:
             if not title or len(title) < 5:
                 continue
             url = href if href.startswith("http") else self.BASE_URL + href
-            if url in self.seen:
-                continue
-            self.seen.add(url)
-            new.append({"title": title, "url": url, "date": "", "source": "Saxo Bank Research"})
+            if url not in self.seen:
+                self.seen.add(url)
+                with open("seen_urls.txt", "w") as f:
+                    json.dump(list(self.seen), f)
+                new.append({"title": title, "url": url, "date": "", "source": "Saxo Bank Research"})
         return new
 
 # --- Globals ---
