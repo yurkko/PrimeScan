@@ -157,12 +157,12 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Article Text:\n" + content
     )
     try:
-        resp = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role":"user","content":prompt}],
+        response = openai.chat.completions.create(
+            model="gpt-4",  # Використовуйте доступну модель, наприклад "gpt-4" або "gpt-4o"
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.1
         )
-        summary = resp.choices[0].message.content
+        summary = response.choices[0].message.content
     except Exception as e:
         logger.error("OpenAI error: %s", e)
         await query.edit_message_text("Error summarizing.")
