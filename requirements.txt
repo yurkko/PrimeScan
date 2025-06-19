@@ -4,4 +4,4 @@ beautifulsoup4
 PyMuPDF
 python-dotenv
 openai
-apscheduler
+
