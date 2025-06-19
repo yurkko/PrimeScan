@@ -199,7 +199,7 @@ def main():
     app.add_handler(CallbackQueryHandler(insights_callback, pattern=r"^INSIGHTS\|"))
 
     # Schedule scraping every 10 minutes
-    app.job_queue.run_repeating(check_sites_callback, interval=600, first=5)
+    app.job_queue.run_repeating(check_sites_callback, interval=60, first=5)
 
     # Start polling (blocks, handles its own loop)
     time.sleep(10)
