@@ -12,6 +12,7 @@ from telegram.ext import (
 )
 from dotenv import load_dotenv
 from openai import OpenAI
+import asyncio
 
 # --- Load environment variables ---
 load_dotenv()
@@ -41,7 +42,7 @@ class ADMISMonitor:
         except Exception as e:
             logger.error("Failed to fetch ADMIS page: %s", e)
             return []
-        soup = BeautifulSoup(resp.text, 'html.parser')
+        soup = BeautifulSoup(resp.text, 'parser')
         new = []
         for h3 in soup.find_all("h3"):
             a = h3.find('a')
@@ -184,13 +185,16 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
             logger.info("Alert sent: %s", title)
 
 # --- Entrypoint ---
-def main():
+async def run_bot():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.bot.delete_webhook()
+    await app.bot.delete_webhook()
     app.add_handler(CommandHandler("start", start_bot))
     app.add_handler(CallbackQueryHandler(insights_callback, pattern=r"^INSIGHTS\|"))
     app.job_queue.run_repeating(check_sites_callback, interval=600, first=5)
-    app.run_polling(drop_pending_updates=True)
+    await app.run_polling(drop_pending_updates=True)
+
+def main():
+    asyncio.run(run_bot())
 
 if __name__ == "__main__":
     main()
