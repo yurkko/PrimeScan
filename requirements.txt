@@ -1,6 +1,6 @@
-python-telegram-bot[webhooks]>=20.0
 fastapi
 uvicorn
+python-telegram-bot[webhooks]>=20.0
 python-dotenv
 openai>=1.0.0
 requests
