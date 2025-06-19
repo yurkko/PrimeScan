@@ -13,12 +13,12 @@ from telegram.ext import (
 import time
 import json  # Added for JSON file handling
 from dotenv import load_dotenv
-import openai
+import google.generativeai as genai  # Замінено openai на genai
 
 # --- Load environment variables ---
 load_dotenv()
 BOT_TOKEN      = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # Оновлено на GEMINI_API_KEY
 ADMIN_ID       = int(os.getenv("ADMIN_ID"))
 
 # --- Logging ---
