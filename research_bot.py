@@ -23,7 +23,7 @@ ADMIN_ID       = int(os.getenv("ADMIN_ID"))
 
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(name)
+logger = logging.getLogger(__name__)
 
 # --- Monitors ---
 class ADMISMonitor:
