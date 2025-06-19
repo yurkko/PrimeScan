@@ -4,3 +4,4 @@ beautifulsoup4
 PyMuPDF
 python-dotenv
 openai
+google-generative-ai
