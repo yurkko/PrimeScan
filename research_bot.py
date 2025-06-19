@@ -13,24 +13,24 @@ from telegram.ext import (
 import time
 import json  # Added for JSON file handling
 from dotenv import load_dotenv
-import google.generativeai as genai  # Замінено openai на genai
+import openai
 
 # --- Load environment variables ---
 load_dotenv()
 BOT_TOKEN      = os.getenv("TELEGRAM_BOT_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # Оновлено на GEMINI_API_KEY
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ADMIN_ID       = int(os.getenv("ADMIN_ID"))
 
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(name)
 
 # --- Monitors ---
 class ADMISMonitor:
     BASE_URL = "https://www.admis.com"
     LIST_URL = BASE_URL + "/market-information/written-commentary/"
 
-    def __init__(self):
+    def init(self):
         try:
             with open("seen_urls.txt", "r") as f:
                 self.seen = set(json.load(f))
@@ -67,7 +67,7 @@ class SaxoMonitor:
     INSIGHTS_URL = "https://www.home.saxo/insights"
     BASE_URL     = "https://www.home.saxo"
 
-    def __init__(self):
+    def init(self):
         try:
             with open("seen_urls.txt", "r") as f:
                 self.seen = set(json.load(f))
@@ -107,7 +107,6 @@ async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Unauthorized.")
         return
     await update.message.reply_text("Bot is running. I will notify you of new research articles.")
-
 # --- Button callback ---
 async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -149,21 +148,22 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("No text extracted.")
         return
 
-    import google.generativeai as genai
-    import os
+    openai.api_key = OPENAI_API_KEY
+    prompt = (
+        "Summarize the following research article with sections:\n"
+        "Title, Key points, Impact on markets, Source, Date, Link.\n\n"
+        f"Title: {title}\nSource: {source}\nDate: {date}\nLink: {url}\n\n"
+        "Article Text:\n" + content
+    )
     try:
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        model = genai.GenerativeModel('gemini-1.5-flash')  # Використовуйте доступну модель
-        prompt = (
-            "Summarize the following research article with sections:\n"
-            "Title, Key points, Impact on markets, Source, Date, Link.\n\n"
-            f"Title: {title}\nSource: {source}\nDate: {date}\nLink: {url}\n\n"
-            "Article Text:\n" + content
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo",  # Використовуйте доступну модель, наприклад "gpt-4" або "gpt-4o"
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1
         )
-        response = model.generate_content(prompt)
-        summary = response.text
+        summary = response.choices[0].message.content
     except Exception as e:
-        logger.error("Gemini error: %s", e)
+        logger.error("OpenAI error: %s", e)
         await query.edit_message_text("Error summarizing.")
         return
 
@@ -204,5 +204,5 @@ def main():
     time.sleep(10)
     app.run_polling(drop_pending_updates=True)
 
-if __name__ == "__main__":
+if name == "main":
     main()
