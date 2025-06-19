@@ -2,129 +2,53 @@ import os
 import logging
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from telegram import Update, Bot
+from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
-import openai
-import requests
+from telegram import Bot
+import requests, fitz
 from bs4 import BeautifulSoup
-# Імпорт ваших існуючих модулів моніторингу та обробки (ADMISMonitor, SaxoMonitor тощо)
-# from admis_monitor import ADMISMonitor
-# from saxo_monitor import SaxoMonitor
+from openai import OpenAI
 
-# Завантаження змінних середовища з файлу .env
+load_dotenv()
+
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ADMIN_ID = os.getenv("ADMIN_ID")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-PORT = int(os.getenv("PORT", 8080))
+OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY")
+ADMIN_ID           = os.getenv("ADMIN_ID")
+WEBHOOK_URL        = os.getenv("WEBHOOK_URL") or os.getenv("RAILWAY_STATIC_URL")
+PORT               = int(os.getenv("PORT", 8080))
 
-# Налаштування логування
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
+if not (TELEGRAM_BOT_TOKEN and OPENAI_API_KEY and WEBHOOK_URL):
+    raise RuntimeError("Missing required environment variables")
+
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Налаштування ключа OpenAI
-openai.api_key = OPENAI_API_KEY
+# OpenAI client
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Ініціалізація FastAPI-додатку
+# FastAPI & Telegram app
 app = FastAPI()
+telegram_app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-# Ініціалізація Telegram-бота з ApplicationBuilder
-application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+# --- Command handlers ---
+async def start_cmd(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await ctx.bot.send_message(u.effective_chat.id, "Бот запущено через Webhook!")
 
-# ------------------ Обробники команд ------------------
+telegram_app.add_handler(CommandHandler("start", start_cmd))
+telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u,ctx: ctx.bot.send_message(u.effective_chat.id, u.message.text)))
 
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробник команди /start."""
-    user = update.effective_user
-    await context.bot.send_message(chat_id=update.effective_chat.id,
-                                   text=f"Привіт, {user.first_name}! Я готовий.")
+# --- Webhook registration on startup ---
+@app.on_event("startup")
+async def register_webhook():
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    url = WEBHOOK_URL.rstrip("/") + "/" + TELEGRAM_BOT_TOKEN
+    await bot.set_webhook(url)
+    logger.info(f"Registered webhook: {url}")
 
-async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Приклад обмеження доступу за ADMIN_ID."""
-    user_id = str(update.effective_user.id)
-    if user_id != ADMIN_ID:
-        await context.bot.send_message(chat_id=update.effective_chat.id, 
-                                       text="Ви не маєте доступу до цієї команди.")
-        return
-    await context.bot.send_message(chat_id=update.effective_chat.id, 
-                                   text="Команда доступна адміністратору.")
-
-# ------------------ Логіка моніторингу (заглушки) ------------------
-# Тут потрібно вставити реальну логіку ваших класів/функцій ADMISMonitor, SaxoMonitor тощо.
-
-async def check_admis(context: ContextTypes.DEFAULT_TYPE):
-    # Приклад функції моніторингу ADMIS (запуск оn та зміну стратегії)
-    # admi_monitor = ADMISMonitor()
-    # new_reports = admi_monitor.check_updates()
-    # for report in new_reports:
-    #     summary = admi_monitor.summarize_report(report)
-    #     await context.bot.send_message(chat_id=ADMIN_ID, text=summary)
-    pass
-
-async def check_saxo(context: ContextTypes.DEFAULT_TYPE):
-    # Приклад функції моніторингу Saxo
-    # saxo_monitor = SaxoMonitor()
-    # updates = saxo_monitor.check_updates()
-    # for update_text in updates:
-    #     await context.bot.send_message(chat_id=ADMIN_ID, text=update_text)
-    pass
-
-# ------------------ Команди для ручного запуску (якщо потрібно) ------------------
-
-async def admis_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ручний запуск перевірки ADMIS (тільки для адміністратора)."""
-    user_id = str(update.effective_user.id)
-    if user_id != ADMIN_ID:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Немає доступу.")
-        return
-    # admi_monitor = ADMISMonitor()
-    # summary = admi_monitor.get_latest_summary()
-    # await update.message.reply_text(summary)
-    await update.message.reply_text("ADMIS summary готовий (заглушка).")
-
-async def saxo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ручний запуск перевірки Saxo (тільки для адміністратора)."""
-    user_id = str(update.effective_user.id)
-    if user_id != ADMIN_ID:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Немає доступу.")
-        return
-    # saxo_monitor = SaxoMonitor()
-    # summary = saxo_monitor.get_latest_summary()
-    # await update.message.reply_text(summary)
-    await update.message.reply_text("Saxo summary готовий (заглушка).")
-
-# ------------------ Обробник довільних повідомлень ------------------
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Проста ехо-функція для тестування."""
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=update.message.text)
-
-# ------------------ Додавання обробників ------------------
-application.add_handler(CommandHandler("start", start_command))
-application.add_handler(CommandHandler("admin", admin_command))
-application.add_handler(CommandHandler("admis", admis_command))
-application.add_handler(CommandHandler("saxo", saxo_command))
-application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), echo))
-
-# ------------------ Webhook-ендпоїнт FastAPI ------------------
+# --- Telegram webhook endpoint ---
 @app.post(f"/{TELEGRAM_BOT_TOKEN}")
 async def telegram_webhook(request: Request):
-    """Отримує оновлення від Telegram і передає їх в обробник python-telegram-bot."""
     data = await request.json()
-    update = Update.de_json(data, Bot(TELEGRAM_BOT_TOKEN))
-    await application.process_update(update)
+    upd = Update.de_json(data, Bot(TELEGRAM_BOT_TOKEN))
+    await telegram_app.process_update(upd)
     return {"ok": True}
-
-# ------------------ Запуск вебхука ------------------
-if __name__ == "__main__":
-    # Встановлюємо вебхук у Telegram
-    webhook_full_url = WEBHOOK_URL.rstrip("/") + "/" + TELEGRAM_BOT_TOKEN
-    # Виконуємо запуск вебхука (налаштовує Bot.set_webhook() та запускає вебсервер)
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=TELEGRAM_BOT_TOKEN,
-        webhook_url=webhook_full_url,
-        # Додаткові параметри (максимум 40 з'єднань, ключ/сертифікат не потрібні при зовнішньому HTTPS)
-    )
