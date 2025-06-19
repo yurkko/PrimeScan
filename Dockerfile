@@ -1,19 +1,16 @@
-# Вказуємо базовий образ
 FROM python:3.12-slim
 
-# Створюємо робочий каталог всередині контейнера
 WORKDIR /app
-
-# Копіюємо всі файли з репозиторію в контейнер
 COPY . .
 
-# Створюємо віртуальне середовище та встановлюємо залежності
-RUN python -m venv /opt/venv && \
-    /opt/venv/bin/pip install --upgrade pip && \
-    /opt/venv/bin/pip install --no-cache-dir -r /app/requirements.txt
+# Ставимо системні пакунки для збірки залежностей (якщо потрібно)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends build-essential && \
+    rm -rf /var/lib/apt/lists/*
 
-# Встановлюємо середовище як основне (Railway/Nixpacks буде використовувати цей шлях)
-ENV PATH="/opt/venv/bin:$PATH"
+# Оновлюємо pip та ставимо requirements глобально
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Вказуємо команду запуску (замінити на вашу, наприклад main.py або bot.py)
+# Запуск
 CMD ["python", "main.py"]
