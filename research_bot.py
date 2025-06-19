@@ -11,7 +11,7 @@ from telegram.ext import (
     ContextTypes,
 )
 from dotenv import load_dotenv
-import openai
+from openai import OpenAI
 
 # --- Load environment variables ---
 load_dotenv()
@@ -22,6 +22,9 @@ ADMIN_ID       = int(os.getenv("ADMIN_ID"))
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# --- OpenAI client ---
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # --- Monitors ---
 class ADMISMonitor:
@@ -42,13 +45,14 @@ class ADMISMonitor:
         new = []
         for h3 in soup.find_all("h3"):
             a = h3.find('a')
-            if not a: continue
+            if not a:
+                continue
             title = a.get_text(strip=True)
-            href  = a['href']
-            url   = href if href.startswith("http") else self.BASE_URL + href
+            href = a['href']
+            url = href if href.startswith("http") else self.BASE_URL + href
             date_tag = h3.find_next_sibling("p")
-            date     = date_tag.get_text(strip=True) if date_tag else ""
-            source   = "ADMIS Written Commentary"
+            date = date_tag.get_text(strip=True) if date_tag else ""
+            source = "ADMIS Written Commentary"
             if url not in self.seen:
                 self.seen.add(url)
                 new.append({"title": title, "url": url, "date": date, "source": source})
@@ -137,7 +141,6 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Summarize via OpenAI
-    openai.api_key = OPENAI_API_KEY
     prompt = (
         "Summarize the following research article with sections:\n"
         "Title, Key points, Impact on markets, Source, Date, Link.\n\n"
@@ -145,12 +148,12 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Article Text:\n" + content
     )
     try:
-        resp = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
-            messages=[{"role":"user","content":prompt}],
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.1
         )
-        summary = resp.choices[0].message.content
+        summary = response.choices[0].message.content
     except Exception as e:
         logger.error("OpenAI error: %s", e)
         await query.edit_message_text("Error summarizing.")
@@ -174,26 +177,19 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
             )
             art_id = f"{source}_{hash(url)}"
             pending_articles[art_id] = art
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🧠 Load Insights", callback_data=f"INSIGHTS|{art_id}")]])
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🧠 Load Insights", callback_data=f"INSIGHTS|{art_id}")]
+            ])
             await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=kb, parse_mode='Markdown')
             logger.info("Alert sent: %s", title)
 
 # --- Entrypoint ---
 def main():
-    # Build application
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    # Clear any webhook so polling works
     app.bot.delete_webhook()
-
-    # Handlers
     app.add_handler(CommandHandler("start", start_bot))
     app.add_handler(CallbackQueryHandler(insights_callback, pattern=r"^INSIGHTS\|"))
-
-    # Schedule scraping every 10 minutes
     app.job_queue.run_repeating(check_sites_callback, interval=600, first=5)
-
-    # Start polling (this will block and run its own loop)
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
