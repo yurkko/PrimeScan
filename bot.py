@@ -9,11 +9,9 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
-    JobQueue,
 )
 from dotenv import load_dotenv
 import openai
-import re
 
 # --- Load .env configuration ---
 load_dotenv()
@@ -194,12 +192,21 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
             logger.info("Sent alert for new article: %s", title)
 
 # --- Main ---
-def main():
+async def main():
+    # Build the bot
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    # Ensure polling (not webhook) and clear any previous webhook
+    await app.bot.delete_webhook()
+
+    # Handlers
     app.add_handler(CommandHandler("start", start_bot))
     app.add_handler(CallbackQueryHandler(insights_callback, pattern=r"^INSIGHTS\|"))
     app.job_queue.run_repeating(check_sites_callback, interval=600, first=0)
-    app.run_polling()
+
+    # Start polling and drop any stale updates
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
-    main()
+    import asyncio
+    asyncio.run(main())
