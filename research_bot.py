@@ -1,20 +1,21 @@
 import os
-import logging
-import fitz  # PyMuPDF
 import requests
+import fitz  # PyMuPDF
+import logging
 from bs4 import BeautifulSoup
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
     JobQueue,
+    ApplicationBuilder,
 )
 from dotenv import load_dotenv
 import openai
 
-# --- Load .env configuration ---
+# --- Load environment variables ---
 load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -70,31 +71,41 @@ class SaxoMonitor:
         except Exception as e:
             logger.error("Failed to fetch Saxo Insights page: %s", e)
             return []
+
         soup = BeautifulSoup(resp.text, 'html.parser')
         new_articles = []
-        for a in soup.select("a[href*='/content/articles/']"):
+
+        for a in soup.find_all("a", href=True):
+            href = a['href']
+            if "/content/articles/" not in href:
+                continue
             title = a.get_text(strip=True)
-            url = a['href']
-            if not url.startswith("http"):
-                url = self.BASE_URL + url
-            if not title or url in self.seen:
+            if not title or len(title) < 5:
+                continue
+            url = href if href.startswith("http") else self.BASE_URL + href
+            if url in self.seen:
                 continue
             self.seen.add(url)
-            date = ""
-            source = "Saxo Bank Research"
-            new_articles.append({"title": title, "url": url, "date": date, "source": source})
+            new_articles.append({
+                "title": title,
+                "url": url,
+                "date": "",
+                "source": "Saxo Bank Research"
+            })
+
         return new_articles
 
 # --- Globals ---
 pending_articles = {}
 
-# --- Handlers ---
+# --- Command: /start ---
 async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("Unauthorized.")
         return
     await update.message.reply_text("Bot is running. I will notify you of new research articles.")
 
+# --- Callback: summarize article ---
 async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -159,6 +170,7 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.edit_message_text(text=summary, parse_mode='Markdown')
 
+# --- Periodic job ---
 async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
     bot = context.bot
     monitors = [ADMISMonitor(), SaxoMonitor()]
@@ -166,28 +178,27 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
         for article in monitor.check_new():
             title, url, date, source = article["title"], article["url"], article["date"], article["source"]
             msg = (
-                f"📌 New research from {source}\n"
-                f"📅 {date}\n"
+                f"📌 *New research from {source}*\n"
+                f"📅 {date or 'Unknown date'}\n"
                 f"📰 Title: {title}\n"
-                f"🔗 [Read the original]({url})\n"
+                f"🔗 [Read the original]({url})\n\n"
                 "⬇️ Click below for a concise analysis:"
             )
             article_id = f"{source}_{hash(url)}"
             pending_articles[article_id] = article
-            button = InlineKeyboardButton("\ud83e\udde0 Load Insights", callback_data=f"INSIGHTS|{article_id}")
+            button = InlineKeyboardButton("🧠 Load Insights", callback_data=f"INSIGHTS|{article_id}")
             keyboard = InlineKeyboardMarkup([[button]])
             await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=keyboard, parse_mode='Markdown')
             logger.info("Sent alert for new article: %s", title)
 
 # --- Main ---
-def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-
+async def main():
+    app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start_bot))
-    app.add_handler(CallbackQueryHandler(insights_callback, pattern=r"^INSIGHTS\\|"))
-    app.job_queue.run_repeating(check_sites_callback, interval=600, first=0)
-
-    app.run_polling(drop_pending_updates=True)
+    app.add_handler(CallbackQueryHandler(insights_callback, pattern=r"^INSIGHTS\|"))
+    app.job_queue.run_repeating(check_sites_callback, interval=600, first=5)
+    await app.run_polling()
 
 if __name__ == '__main__':
-    main()
+    import asyncio
+    asyncio.run(main())
