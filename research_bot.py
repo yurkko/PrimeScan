@@ -158,7 +158,7 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     try:
         response = openai.chat.completions.create(
-            model="gpt-4",  # Використовуйте доступну модель, наприклад "gpt-4" або "gpt-4o"
+            model="gpt-3.5-turbo",  # Використовуйте доступну модель, наприклад "gpt-4" або "gpt-4o"
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1
         )
