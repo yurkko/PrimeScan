@@ -1,6 +1,6 @@
 python-telegram-bot==20.6
-requests
-beautifulsoup4
-PyMuPDF
-python-dotenv
-google-generative-ai
+requests==2.31.0
+beautifulsoup4==4.12.2
+PyMuPDF==1.23.7
+python-dotenv==1.0.0
+google-generative-ai==0.3.2  # Вкажіть стабільну версію
