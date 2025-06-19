@@ -15,4 +15,4 @@ RUN python -m pip install --upgrade pip
 RUN python -m pip install --no-cache-dir -r requirements.txt -v
 
 # Запуск
-CMD ["python", "main.py"]
+CMD ["python", "research_bot.py"]
