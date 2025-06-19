@@ -1,6 +1,6 @@
-python-telegram-bot[job-queue]==22.1
-requests
-beautifulsoup4
-PyMuPDF
-python-dotenv
-openai
+python-telegram-bot[webhooks]>=20.0  # основна бібліотека з підтримкою webhook
+aiohttp                         # потрібен для Webhook-адаптера
+fastapi                         # якщо використовуєте FastAPI (або інший ASGI)
+uvicorn                         # ASGI-сервер (або gunicorn+uvicorn.workers)
+gunicorn                        # альтернатива для запуску (за потреби)
+python-dotenv                   # для локального .env
