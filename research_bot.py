@@ -1,9 +1,10 @@
+```python
 import os
 import requests
 import fitz  # PyMuPDF
 import logging
 from bs4 import BeautifulSoup
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -22,6 +23,10 @@ ADMIN_ID       = int(os.getenv("ADMIN_ID"))
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# --- Clear any existing webhook synchronously ---
+sync_bot = Bot(BOT_TOKEN)
+sync_bot.delete_webhook()
 
 # --- Monitors ---
 class ADMISMonitor:
@@ -42,7 +47,8 @@ class ADMISMonitor:
         new = []
         for h3 in soup.find_all("h3"):
             a = h3.find('a')
-            if not a: continue
+            if not a:
+                continue
             title = a.get_text(strip=True)
             href  = a['href']
             url   = href if href.startswith("http") else self.BASE_URL + href
@@ -111,7 +117,6 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         article["title"], article["url"], article["source"], article["date"]
     )
 
-    # Fetch full content
     try:
         resp = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
         resp.raise_for_status()
@@ -136,7 +141,6 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("No text extracted.")
         return
 
-    # Summarize via OpenAI
     openai.api_key = OPENAI_API_KEY
     prompt = (
         "Summarize the following research article with sections:\n"
@@ -158,7 +162,7 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.edit_message_text(text=summary, parse_mode='Markdown')
 
-# --- Periodic scrape job ---
+# --- Periodic job ---
 async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
     bot = context.bot
     monitors = [ADMISMonitor(), SaxoMonitor()]
@@ -180,11 +184,7 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
 
 # --- Entrypoint ---
 def main():
-    # Build application
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    # Clear any webhook so polling works
-    app.bot.delete_webhook()
 
     # Handlers
     app.add_handler(CommandHandler("start", start_bot))
@@ -193,8 +193,9 @@ def main():
     # Schedule scraping every 10 minutes
     app.job_queue.run_repeating(check_sites_callback, interval=600, first=5)
 
-    # Start polling (this will block and run its own loop)
+    # Start polling (blocks, handles its own loop)
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
+```
