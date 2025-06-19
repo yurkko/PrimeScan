@@ -3,7 +3,7 @@ import requests
 import fitz  # PyMuPDF
 import logging
 from bs4 import BeautifulSoup
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -19,9 +19,9 @@ BOT_TOKEN      = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ADMIN_ID       = int(os.getenv("ADMIN_ID"))
 
-# --- Clear any existing webhook synchronously ---
-sync_bot = Bot(BOT_TOKEN)
-sync_bot.delete_webhook()
+# --- Logging ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # --- Monitors ---
 class ADMISMonitor:
