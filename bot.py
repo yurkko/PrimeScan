@@ -13,6 +13,7 @@ from telegram.ext import (
 )
 from dotenv import load_dotenv
 import openai
+import re
 
 # --- Load .env configuration ---
 load_dotenv()
@@ -56,6 +57,7 @@ class ADMISMonitor:
                 new_articles.append({"title": title, "url": url, "date": date, "source": source})
         return new_articles
 
+
 class SaxoMonitor:
     INSIGHTS_URL = "https://www.home.saxo/insights"
     BASE_URL = "https://www.home.saxo"
@@ -70,22 +72,29 @@ class SaxoMonitor:
         except Exception as e:
             logger.error("Failed to fetch Saxo Insights page: %s", e)
             return []
+
         soup = BeautifulSoup(resp.text, 'html.parser')
         new_articles = []
-        section = soup.find("h2", string="Latest research")
-        if not section:
-            logger.warning("Could not find Latest research section on Saxo page")
-            return []
-        for a in section.find_all_next("a", href=True):
+
+        for a in soup.find_all("a", href=True):
+            href = a['href']
+            if not href.startswith("/content/articles/"):
+                continue
             title = a.get_text(strip=True)
-            url = a['href']
-            if not url.startswith("http"):
-                url = self.BASE_URL + url
-            date = ""
-            source = "Saxo Bank Research"
-            if url not in self.seen:
-                self.seen.add(url)
-                new_articles.append({"title": title, "url": url, "date": date, "source": source})
+            if not title or title.lower() in ("learn more", "read more"):
+                continue
+            url = self.BASE_URL + href
+            if url in self.seen:
+                continue
+            self.seen.add(url)
+            new_articles.append({
+                "title": title,
+                "url": url,
+                "date": "",
+                "source": "Saxo Bank Research"
+            })
+            logger.info("New SAXO article detected: %s", title)
+
         return new_articles
 
 # --- Globals ---
@@ -171,15 +180,15 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
         for article in monitor.check_new():
             title, url, date, source = article["title"], article["url"], article["date"], article["source"]
             msg = (
-                f"\ud83d\udccc New research from {source}\n"
-                f"\ud83d\udcc5 {date}\n"
-                f"\ud83d\udcf0 Title: {title}\n"
-                f"\ud83d\udd17 [Read the original]({url})\n"
-                "\u2b07\ufe0f Click below for a concise analysis:"
+                f"📌 *New research from {source}*\n"
+                f"📅 {date or 'N/A'}\n"
+                f"📰 Title: {title}\n"
+                f"🔗 [Read the original]({url})\n"
+                "⬇️ Click below for a concise analysis:"
             )
             article_id = f"{source}_{hash(url)}"
             pending_articles[article_id] = article
-            button = InlineKeyboardButton("\ud83e\udde0 Load Insights", callback_data=f"INSIGHTS|{article_id}")
+            button = InlineKeyboardButton("🧠 Load Insights", callback_data=f"INSIGHTS|{article_id}")
             keyboard = InlineKeyboardMarkup([[button]])
             await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=keyboard, parse_mode='Markdown')
             logger.info("Sent alert for new article: %s", title)
@@ -188,7 +197,7 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start_bot))
-    app.add_handler(CallbackQueryHandler(insights_callback, pattern=r"^INSIGHTS\\|"))
+    app.add_handler(CallbackQueryHandler(insights_callback, pattern=r"^INSIGHTS\|"))
     app.job_queue.run_repeating(check_sites_callback, interval=600, first=0)
     app.run_polling()
 
