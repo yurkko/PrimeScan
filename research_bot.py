@@ -12,7 +12,6 @@ from bs4 import BeautifulSoup
 # from saxo_monitor import SaxoMonitor
 
 # Завантаження змінних середовища з файлу .env
-load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ADMIN_ID = os.getenv("ADMIN_ID")
