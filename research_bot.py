@@ -189,6 +189,7 @@ def main():
     app.job_queue.run_repeating(check_sites_callback, interval=600, first=5)
 
     # Start polling (blocks, handles its own loop)
+    time.sleep(10)
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
