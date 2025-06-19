@@ -149,22 +149,21 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("No text extracted.")
         return
 
-    openai.api_key = OPENAI_API_KEY
-    prompt = (
-        "Summarize the following research article with sections:\n"
-        "Title, Key points, Impact on markets, Source, Date, Link.\n\n"
-        f"Title: {title}\nSource: {source}\nDate: {date}\nLink: {url}\n\n"
-        "Article Text:\n" + content
-    )
+    import google.generativeai as genai
+    import os
     try:
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",  # Використовуйте доступну модель, наприклад "gpt-4" або "gpt-4o"
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1
+        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+        model = genai.GenerativeModel('gemini-1.5-flash')  # Використовуйте доступну модель
+        prompt = (
+            "Summarize the following research article with sections:\n"
+            "Title, Key points, Impact on markets, Source, Date, Link.\n\n"
+            f"Title: {title}\nSource: {source}\nDate: {date}\nLink: {url}\n\n"
+            "Article Text:\n" + content
         )
-        summary = response.choices[0].message.content
+        response = model.generate_content(prompt)
+        summary = response.text
     except Exception as e:
-        logger.error("OpenAI error: %s", e)
+        logger.error("Gemini error: %s", e)
         await query.edit_message_text("Error summarizing.")
         return
 
