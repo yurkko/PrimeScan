@@ -248,6 +248,7 @@ def main():
     # Handlers
     app.add_handler(CommandHandler("start", start_bot))
     app.add_handler(CallbackQueryHandler(insights_callback, pattern=r"^INSIGHTS\|"))
+    app.add_handler(CallbackQueryHandler(translate_callback, pattern=r"^TRANSLATE\|"))
 
     # Schedule scraping every 10 minutes
     app.job_queue.run_repeating(check_sites_callback, interval=60, first=5)
