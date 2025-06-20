@@ -186,18 +186,23 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
             
             # Видаляємо префікси та часові позначки
             original_title = title
-            # Шаблон для видалення: "Options - ", "Macro - ", "Commodities - ", "Podcast - " та час (X minutes/hours/days ago)
             prefix_pattern = r'^(Options|Macro|Commodities|Podcast)\s*-\s*(\d+\s+(minutes|hours|days)\s+ago)?\s*'
             title = re.sub(prefix_pattern, '', title, flags=re.IGNORECASE).strip()
 
-            # Видаляємо дублювання тексту, залишаючи першу унікальну частину
-            parts = title.split(".", 1)  # Розбиваємо по першій крапці
+            # Видаляємо подвоєння тексту
+            if len(title) > 10:  # Перевіряємо лише довгі рядки, щоб уникнути помилок
+                half_length = len(title) // 2
+                if title[half_length:] == title[:half_length]:
+                    title = title[:half_length].strip()
+                elif title.count(title[:len(title)//3]) > 1:  # Перевірка на меншу частину
+                    unique_part = re.match(r'^(.+?)(?:\1)', title)
+                    if unique_part:
+                        title = unique_part.group(1).strip()
+
+            # Додаткова обробка, якщо подвоєння не знайдено через крапку
+            parts = title.split(".", 1)
             if len(parts) > 1 and parts[0].strip() in parts[1]:
-                title = parts[0].strip() + "."  # Зберігаємо першу частину з крапкою
-            elif title.count(title[:len(title)//2]) > 1:  # Перевірка на дублювання
-                unique_part = re.match(r'^(.+?)(?:\s*\.\s*.+\.)', title)
-                if unique_part:
-                    title = unique_part.group(1).strip() + "."
+                title = parts[0].strip() + "."
 
             msg = (
                 f"📌 *New research from {source}*\n"
