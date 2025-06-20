@@ -204,6 +204,11 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
             if len(parts) > 1 and parts[0].strip() in parts[1]:
                 title = parts[0].strip() + "."
 
+            # Пропускаємо, якщо це Podcast або Webinar
+            if "podcast" in title.lower() or "webinar" in title.lower():
+                logger.info("Skipped: %s (Podcast/Webinar)", original_title)
+                continue
+
             msg = (
                 f"📌 *New research from {source}*\n"
                 f"📅 {date or 'Unknown'}\n"
