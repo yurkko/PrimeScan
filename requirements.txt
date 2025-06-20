@@ -1,6 +1,5 @@
 python-telegram-bot[job-queue]==20.6
-requests
-beautifulsoup4
-PyMuPDF
-python-dotenv
-openai
+requests==2.31.0
+beautifulsoup4==4.12.2
+PyMuPDF==1.23.7
+python-dotenv==1.0.0
