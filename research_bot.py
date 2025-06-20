@@ -188,7 +188,7 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
     monitors = [ADMISMonitor(), SaxoMonitor()]
     new_articles = []  # Тимчасовий список для збору статей
 
-    # Імпорт регулярних виразів для гнучкої обробки
+    # Імпорт регулярних виразів і datetime
     import re
     from datetime import datetime
 
@@ -203,16 +203,16 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
             title = re.sub(prefix_pattern, '', title, flags=re.IGNORECASE).strip()
 
             # Видаляємо подвоєння тексту
-            if len(title) > 10:  # Перевіряємо лише довгі рядки, щоб уникнути помилок
+            if len(title) > 10:
                 half_length = len(title) // 2
                 if title[half_length:] == title[:half_length]:
                     title = title[:half_length].strip()
-                elif title.count(title[:len(title)//3]) > 1:  # Перевірка на меншу частину
+                elif title.count(title[:len(title)//3]) > 1:
                     unique_part = re.match(r'^(.+?)(?:\1)', title)
                     if unique_part:
                         title = unique_part.group(1).strip()
 
-            # Додаткова обробка, якщо подвоєння не знайдено через крапку
+            # Додаткова обробка подвоєння через крапку
             parts = title.split(".", 1)
             if len(parts) > 1 and parts[0].strip() in parts[1]:
                 title = parts[0].strip() + "."
@@ -222,13 +222,13 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
                 logger.info("Skipped: %s (Podcast/Webinar)", original_title)
                 continue
 
-            # Формуємо час відправлення замість дати
+            # Час відправлення
             send_time = datetime.now().strftime("%H:%M %d/%m/%Y")
 
             msg = (
-                f"📌 *New research from: {source}*\n"  # Додано двокрапку після "from"
-                f"📅 {send_time}\n"  # Замінено дату на час відправлення
-                f"📰 **{title}**\n"  # Зроблено title жирним
+                f"📌 *New research from: {source}*\n"
+                f"📅 {send_time}\n"
+                f"📰 **Title: {title}**\n"  # Повернуто "Title:" із жирним форматуванням
                 f"🔗 [Read the original]({url})\n\n"
                 "⬇️ Click below for a concise analysis:"
             )
@@ -240,7 +240,67 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
     for msg, art_id in new_articles:
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🧠 Load Insights", callback_data=f"INSIGHTS|{art_id}")]])
         await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=kb, parse_mode='Markdown')
-        logger.info("Alert sent: %s", msg.split("\n")[2].replace("📰 **", "").replace("**", ""))  # Логуємо title
+        logger.info("Alert sent: %s", msg.split("\n")[2].replace("📰 **Title: ", "").replace("**", ""))  # Логуємо title
+
+async def translate_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    if not data.startswith("TRANSLATE|"):
+        return
+    art_id = data.split("|", 1)[1]
+    article = pending_articles.get(art_id)
+    if not article:
+        await query.edit_message_text("Article info not found.")
+        return
+
+    title, url, source, date = (
+        article["title"], article["url"], article["source"], article["date"]
+    )
+
+    try:
+        resp = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+        resp.raise_for_status()
+        content = ""
+        if url.lower().endswith(".pdf"):
+            doc = fitz.open(stream=resp.content, filetype="pdf")
+            for page in doc:
+                content += page.get_text("text")
+        else:
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            content = "\n".join(p.get_text() for p in soup.find_all("p"))
+
+        if not content.strip():
+            await query.edit_message_text("No text extracted.")
+            return
+
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        translate_prompt = (
+            "Translate the following research article summary into Ukrainian with this structure:\n"
+            "- **Назва**: [title]\n"
+            "- **Ключові моменти**: [bullet points]\n"
+            "- **Вплив на ринки**: [impact description]\n"
+            "- **Джерело**: [source]\n"
+            "- **Дата**: [date]\n"
+            "- **Посилання**: [url]\n\n"
+            "Article Text:\n" + content
+        )
+        data = {
+            "model": "openai/gpt-3.5-turbo",
+            "messages": [{"role": "user", "content": translate_prompt}],
+            "max_tokens": 500
+        }
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data)
+        response.raise_for_status()
+        ua_summary = response.json()["choices"][0]["message"]["content"]
+        await query.edit_message_text(text=ua_summary, parse_mode='Markdown')
+    except Exception as e:
+        logger.error("Translation error: %s", e)
+        await query.edit_message_text("Error translating to Ukrainian.")
+
 # --- Entrypoint ---
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
