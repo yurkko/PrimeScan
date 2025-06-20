@@ -158,7 +158,7 @@ import os
       )
       try:
           response = openai.chat.completions.create(
-              model="gpt-3.5-turbo",  # Використовуйте доступну модель
+              model="gpt-4o",  # Використовуйте доступну модель
               messages=[{"role": "user", "content": prompt}],
               temperature=0.1
           )
