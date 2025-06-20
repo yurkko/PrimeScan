@@ -154,19 +154,27 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Content-Type": "application/json"
         }
         prompt = (
-            "Summarize the following research article with sections:\n"
-            "Title, Key points, Impact on markets, Source, Date, Link.\n\n"
-            f"Title: {title}\nSource: {source}\nDate: {date}\nLink: {url}\n\n"
+            "Summarize the following research article in English with this structure:\n"
+            "- **Title**: [title]\n"
+            "- **Key Points**: [bullet points]\n"
+            "- **Impact on Markets**: [impact description]\n"
+            "- **Source**: [source]\n"
+            "- **Date**: [date]\n"
+            "- **Link**: [url]\n\n"
             "Article Text:\n" + content
         )
         data = {
-            "model": "openai/gpt-3.5-turbo",  # Ви можете змінити на іншу модель (перегляньте openrouter.ai)
+            "model": "openai/gpt-3.5-turbo",
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 500
         }
         response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data)
         response.raise_for_status()
         summary = response.json()["choices"][0]["message"]["content"]
+
+        # Додаємо кнопку для української версії
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🇺🇦 Ukrainian", callback_data=f"TRANSLATE|{art_id}")]])
+        await query.edit_message_text(text=summary, reply_markup=kb, parse_mode='Markdown')
     except Exception as e:
         logger.error("OpenRouter error: %s", e)
         await query.edit_message_text("Error summarizing.")
