@@ -154,7 +154,9 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json"
         }
-        prompt = (
+
+        # Генерація підсумку англійською
+        en_prompt = (
             "Summarize the following research article in English with this structure:\n"
             "- **Title**: [title]\n"
             "- **Key Points**: [bullet points]\n"
@@ -164,22 +166,41 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "- **Link**: [url]\n\n"
             "Article Text:\n" + content
         )
-        data = {
+        en_data = {
             "model": "openai/gpt-3.5-turbo",
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [{"role": "user", "content": en_prompt}],
             "max_tokens": 500
         }
-        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data)
-        response.raise_for_status()
-        summary = response.json()["choices"][0]["message"]["content"]
+        en_response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=en_data)
+        en_response.raise_for_status()
+        en_summary = en_response.json()["choices"][0]["message"]["content"]
 
-        # Додаємо кнопку з затримкою для стабільності
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🇺🇦 Ukrainian", callback_data=f"TRANSLATE|{art_id}")]])
-        await query.edit_message_text(text=summary, reply_markup=kb, parse_mode='Markdown')
-        await asyncio.sleep(0.5)  # Коротка затримка для стабілізації відображення
+        # Генерація підсумку українською
+        ua_prompt = (
+            "Translate the following research article summary into Ukrainian with this structure:\n"
+            "- **Назва**: [title]\n"
+            "- **Ключові моменти**: [bullet points]\n"
+            "- **Вплив на ринки**: [impact description]\n"
+            "- **Джерело**: [source]\n"
+            "- **Дата**: [date]\n"
+            "- **Посилання**: [url]\n\n"
+            "Article Text:\n" + content
+        )
+        ua_data = {
+            "model": "openai/gpt-3.5-turbo",
+            "messages": [{"role": "user", "content": ua_prompt}],
+            "max_tokens": 500
+        }
+        ua_response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=ua_data)
+        ua_response.raise_for_status()
+        ua_summary = ua_response.json()["choices"][0]["message"]["content"]
+
+        # Поєднуємо англійську та українську версії
+        final_summary = f"{en_summary}\n\n**Українська версія:**\n{ua_summary}"
+        await query.edit_message_text(text=final_summary, parse_mode='Markdown')
     except Exception as e:
         logger.error("OpenRouter error: %s", e)
-        await query.edit_message_text("Error summarizing.")
+        await query.edit_message_text("Error summarizing or translating.")
         return
 
     await query.edit_message_text(text=summary, parse_mode='Markdown')
@@ -244,65 +265,6 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
         await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=kb, parse_mode='Markdown')
         logger.info("Alert sent: %s", msg.split("\n")[2].replace("📰 **Title: ", "").replace("**", ""))  # Логуємо title
 
-async def translate_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-    if not data.startswith("TRANSLATE|"):
-        return
-    art_id = data.split("|", 1)[1]
-    article = pending_articles.get(art_id)
-    if not article:
-        await query.edit_message_text("Article info not found.")
-        return
-
-    title, url, source, date = (
-        article["title"], article["url"], article["source"], article["date"]
-    )
-
-    try:
-        resp = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-        resp.raise_for_status()
-        content = ""
-        if url.lower().endswith(".pdf"):
-            doc = fitz.open(stream=resp.content, filetype="pdf")
-            for page in doc:
-                content += page.get_text("text")
-        else:
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            content = "\n".join(p.get_text() for p in soup.find_all("p"))
-
-        if not content.strip():
-            await query.edit_message_text("No text extracted.")
-            return
-
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        translate_prompt = (
-            "Translate the following research article summary into Ukrainian with this structure:\n"
-            "- **Назва**: [title]\n"
-            "- **Ключові моменти**: [bullet points]\n"
-            "- **Вплив на ринки**: [impact description]\n"
-            "- **Джерело**: [source]\n"
-            "- **Дата**: [date]\n"
-            "- **Посилання**: [url]\n\n"
-            "Article Text:\n" + content
-        )
-        data = {
-            "model": "openai/gpt-3.5-turbo",
-            "messages": [{"role": "user", "content": translate_prompt}],
-            "max_tokens": 500
-        }
-        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data)
-        response.raise_for_status()
-        ua_summary = response.json()["choices"][0]["message"]["content"]
-        await query.edit_message_text(text=ua_summary, parse_mode='Markdown')
-    except Exception as e:
-        logger.error("Translation error: %s", e)
-        await query.edit_message_text("Error translating to Ukrainian.")
-
 # --- Entrypoint ---
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -310,7 +272,6 @@ def main():
     # Handlers
     app.add_handler(CommandHandler("start", start_bot))
     app.add_handler(CallbackQueryHandler(insights_callback, pattern=r"^INSIGHTS\|"))
-    app.add_handler(CallbackQueryHandler(translate_callback, pattern=r"^TRANSLATE\|"))
 
     # Schedule scraping every 10 minutes
     app.job_queue.run_repeating(check_sites_callback, interval=60, first=5)
