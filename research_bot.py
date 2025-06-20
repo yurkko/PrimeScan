@@ -13,12 +13,11 @@ from telegram.ext import (
 import time
 import json  # Added for JSON file handling
 from dotenv import load_dotenv
-import openai
 
 # --- Load environment variables ---
 load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")  # Оновлено з OPENAI_API_KEY
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 # --- Logging ---
@@ -149,22 +148,27 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("No text extracted.")
         return
 
-    openai.api_key = OPENAI_API_KEY
-    prompt = (
-        "Summarize the following research article with sections:\n"
-        "Title, Key points, Impact on markets, Source, Date, Link.\n\n"
-        f"Title: {title}\nSource: {source}\nDate: {date}\nLink: {url}\n\n"
-        "Article Text:\n" + content
-    )
     try:
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",  # Використовуйте доступну модель
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        prompt = (
+            "Summarize the following research article with sections:\n"
+            "Title, Key points, Impact on markets, Source, Date, Link.\n\n"
+            f"Title: {title}\nSource: {source}\nDate: {date}\nLink: {url}\n\n"
+            "Article Text:\n" + content
         )
-        summary = response.choices[0].message.content
+        data = {
+            "model": "openai/gpt-3.5-turbo",  # Ви можете змінити на іншу модель (перегляньте openrouter.ai)
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 500
+        }
+        response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data)
+        response.raise_for_status()
+        summary = response.json()["choices"][0]["message"]["content"]
     except Exception as e:
-        logger.error("OpenAI error: %s", e)
+        logger.error("OpenRouter error: %s", e)
         await query.edit_message_text("Error summarizing.")
         return
 
@@ -225,6 +229,7 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🧠 Load Insights", callback_data=f"INSIGHTS|{art_id}")]])
         await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=kb, parse_mode='Markdown')
         logger.info("Alert sent: %s", msg.split("\n")[2].replace("📰 Title: ", ""))  # Логуємо title
+
 # --- Entrypoint ---
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
