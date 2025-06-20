@@ -174,9 +174,23 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
     bot = context.bot
     monitors = [ADMISMonitor(), SaxoMonitor()]
+    new_articles = []  # Тимчасовий список для збору статей
+
+    # Імпорт регулярних виразів для гнучкої обробки
+    import re
+
+    # Збираємо всі нові статті
     for mon in monitors:
         for art in mon.check_new():
             title, url, date, source = art["title"], art["url"], art["date"], art["source"]
+            
+            # Видаляємо часові позначки з title
+            original_title = title
+            time_match = re.search(r' - (\d+\s+(hours|days)\s+ago)', title, re.IGNORECASE)
+            if time_match:
+                time_part = time_match.group(1)  # Наприклад, "23 hours ago"
+                title = title.replace(f" - {time_part}", "").strip()  # Просто видаляємо, не змінюємо date
+
             msg = (
                 f"📌 *New research from {source}*\n"
                 f"📅 {date or 'Unknown'}\n"
@@ -186,9 +200,13 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
             )
             art_id = f"{source}_{hash(url)}"
             pending_articles[art_id] = art
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🧠 Load Insights", callback_data=f"INSIGHTS|{art_id}")]])
-            await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=kb, parse_mode='Markdown')
-            logger.info("Alert sent: %s", title)
+            new_articles.append((msg, art_id))
+
+    # Відправляємо статті від старіших до новішої
+    for msg, art_id in new_articles:
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🧠 Load Insights", callback_data=f"INSIGHTS|{art_id}")]])
+        await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=kb, parse_mode='Markdown')
+        logger.info("Alert sent: %s", msg.split("\n")[2].replace("📰 Title: ", ""))  # Логуємо title
 
 # --- Entrypoint ---
 def main():
@@ -199,7 +217,7 @@ def main():
     app.add_handler(CallbackQueryHandler(insights_callback, pattern=r"^INSIGHTS\|"))
 
     # Schedule scraping every 10 minutes
-    app.job_queue.run_repeating(check_sites_callback, interval=600, first=5)
+    app.job_queue.run_repeating(check_sites_callback, interval=300, first=5)
 
     # Start polling (blocks, handles its own loop)
     time.sleep(10)
