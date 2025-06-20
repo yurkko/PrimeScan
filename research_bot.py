@@ -182,6 +182,7 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
 
     # Імпорт регулярних виразів для гнучкої обробки
     import re
+    from datetime import datetime
 
     # Збираємо всі нові статті
     for mon in monitors:
@@ -190,7 +191,7 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
             
             # Видаляємо префікси та часові позначки
             original_title = title
-            prefix_pattern = r'^(Options|Macro|Commodities|Podcast)\s*-\s*(\d+\s+(minutes|hours|days)\s+ago)?\s*'
+            prefix_pattern = r'^(Options|Macro|Equities|Commodities|Podcast)\s*-\s*(\d+\s+(minutes|hours|days)\s+ago)?\s*'
             title = re.sub(prefix_pattern, '', title, flags=re.IGNORECASE).strip()
 
             # Видаляємо подвоєння тексту
@@ -213,10 +214,13 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
                 logger.info("Skipped: %s (Podcast/Webinar)", original_title)
                 continue
 
+            # Формуємо час відправлення замість дати
+            send_time = datetime.now().strftime("%H:%M %d/%m/%Y")
+
             msg = (
-                f"📌 *New research from {source}*\n"
-                f"📅 {date or 'Unknown'}\n"
-                f"📰 Title: {title}\n"
+                f"📌 *New research from: {source}*\n"  # Додано двокрапку після "from"
+                f"📅 {send_time}\n"  # Замінено дату на час відправлення
+                f"📰 **{title}**\n"  # Зроблено title жирним
                 f"🔗 [Read the original]({url})\n\n"
                 "⬇️ Click below for a concise analysis:"
             )
@@ -228,8 +232,7 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
     for msg, art_id in new_articles:
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🧠 Load Insights", callback_data=f"INSIGHTS|{art_id}")]])
         await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=kb, parse_mode='Markdown')
-        logger.info("Alert sent: %s", msg.split("\n")[2].replace("📰 Title: ", ""))  # Логуємо title
-
+        logger.info("Alert sent: %s", msg.split("\n")[2].replace("📰 **", "").replace("**", ""))  # Логуємо title
 # --- Entrypoint ---
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
