@@ -157,17 +157,21 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Генерація підсумку англійською
         en_prompt = (
-            "Summarize the following research article in English with this structure:\n"
-            "- **Title**: [title]\n"
-            "- **Key Points**: [bullet points]\n"
-            "- **Impact on Markets**: [impact description]\n"
-            "- **Source**: [source]\n"
-            "- **Date**: [date]\n"
-            "- **Link**: [url]\n\n"
+            "Summarize the following research article in English using this exact structure with emojis and bold text:\n"
+            "📰 **Title**: " + title + "\n"
+            "📌 **Key Points**:\n"
+            "  ▪️ [bullet point 1]\n"
+            "  ▪️ [bullet point 2]\n"
+            "  ▪️ [bullet point 3]\n"
+            "📊 **Impact on Markets**:\n"
+            "  ▪️ [impact description]\n"
+            "📚 **Source**: " + source + "\n"
+            "📅 **Date**: " + date + "\n"
+            "🔗 **Link**: " + url + "\n\n"
             "Article Text:\n" + content
         )
         en_data = {
-            "model": "openai/gpt-4o",
+            "model": "openai/gpt-3.5-turbo",
             "messages": [{"role": "user", "content": en_prompt}],
             "max_tokens": 500
         }
@@ -177,13 +181,17 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Генерація підсумку українською
         ua_prompt = (
-            "Translate the following research article summary into Ukrainian with this structure:\n"
-            "- **Назва**: [title]\n"
-            "- **Ключові моменти**: [bullet points]\n"
-            "- **Вплив на ринки**: [impact description]\n"
-            "- **Джерело**: [source]\n"
-            "- **Дата**: [date]\n"
-            "- **Посилання**: [url]\n\n"
+            "Translate the following research article summary into Ukrainian using this exact structure with emojis and bold text:\n"
+            "📰 **Назва**: " + title + "\n"
+            "📌 **Ключові моменти**:\n"
+            "  ▪️ [bullet point 1]\n"
+            "  ▪️ [bullet point 2]\n"
+            "  ▪️ [bullet point 3]\n"
+            "📊 **Вплив на ринки**:\n"
+            "  ▪️ [impact description]\n"
+            "📚 **Джерело**: " + source + "\n"
+            "📅 *Дата*: " + date + "\n"
+            "🔗 **Посилання**: " + url + "\n\n"
             "Article Text:\n" + content
         )
         ua_data = {
@@ -195,7 +203,7 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ua_response.raise_for_status()
         ua_summary = ua_response.json()["choices"][0]["message"]["content"]
 
-        # Поєднуємо англійську та українську версії
+        # Поєднання версій
         final_summary = f"{en_summary}\n\n**Українська версія:**\n{ua_summary}"
         await query.edit_message_text(text=final_summary, parse_mode='Markdown')
     except Exception as e:
