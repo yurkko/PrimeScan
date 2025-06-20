@@ -2,6 +2,7 @@ import os
 import requests
 import fitz  # PyMuPDF
 import logging
+import asyncio
 from bs4 import BeautifulSoup
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -172,9 +173,10 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response.raise_for_status()
         summary = response.json()["choices"][0]["message"]["content"]
 
-        # Додаємо кнопку для української версії
+        # Додаємо кнопку з затримкою для стабільності
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🇺🇦 Ukrainian", callback_data=f"TRANSLATE|{art_id}")]])
         await query.edit_message_text(text=summary, reply_markup=kb, parse_mode='Markdown')
+        await asyncio.sleep(0.5)  # Коротка затримка для стабілізації відображення
     except Exception as e:
         logger.error("OpenRouter error: %s", e)
         await query.edit_message_text("Error summarizing.")
