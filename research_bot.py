@@ -184,12 +184,20 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
         for art in mon.check_new():
             title, url, date, source = art["title"], art["url"], art["date"], art["source"]
             
-            # Видаляємо часові позначки з title
+            # Видаляємо префікси та часові позначки
             original_title = title
-            time_match = re.search(r' - (\d+\s+(hours|days)\s+ago)', title, re.IGNORECASE)
-            if time_match:
-                time_part = time_match.group(1)  # Наприклад, "23 hours ago"
-                title = title.replace(f" - {time_part}", "").strip()  # Просто видаляємо, не змінюємо date
+            # Шаблон для видалення: "Options - ", "Macro - ", "Commodities - ", "Podcast - " та час (X minutes/hours/days ago)
+            prefix_pattern = r'^(Options|Macro|Commodities|Podcast)\s*-\s*(\d+\s+(minutes|hours|days)\s+ago)?\s*'
+            title = re.sub(prefix_pattern, '', title, flags=re.IGNORECASE).strip()
+
+            # Видаляємо дублювання тексту, залишаючи першу унікальну частину
+            parts = title.split(".", 1)  # Розбиваємо по першій крапці
+            if len(parts) > 1 and parts[0].strip() in parts[1]:
+                title = parts[0].strip() + "."  # Зберігаємо першу частину з крапкою
+            elif title.count(title[:len(title)//2]) > 1:  # Перевірка на дублювання
+                unique_part = re.match(r'^(.+?)(?:\s*\.\s*.+\.)', title)
+                if unique_part:
+                    title = unique_part.group(1).strip() + "."
 
             msg = (
                 f"📌 *New research from {source}*\n"
@@ -207,7 +215,6 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🧠 Load Insights", callback_data=f"INSIGHTS|{art_id}")]])
         await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=kb, parse_mode='Markdown')
         logger.info("Alert sent: %s", msg.split("\n")[2].replace("📰 Title: ", ""))  # Логуємо title
-
 # --- Entrypoint ---
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
