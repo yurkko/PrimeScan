@@ -167,7 +167,7 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Article Text:\n" + content
         )
         en_data = {
-            "model": "openai/gpt-3.5-turbo",
+            "model": "openai/gpt-4o",
             "messages": [{"role": "user", "content": en_prompt}],
             "max_tokens": 500
         }
