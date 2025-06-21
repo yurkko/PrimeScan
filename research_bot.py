@@ -240,8 +240,11 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
 
     import re
     from datetime import datetime
+    import pytz
 
     seen_in_cycle = set()
+    eest_tz = pytz.timezone("Europe/Kiev")  # Часовий пояс EEST
+
     for mon in monitors:
         for art in mon.check_new():
             url = art["url"]
@@ -250,17 +253,15 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
                 title, date, source = art["title"], art["date"], art["source"]
                 
                 original_title = title
-                prefix_pattern = r'^(Options|Macro|Equities|Commodities|Podcast)\s*-\s*(\d+\s+(minutes|hours|days)\s+ago)?\s*'
+                # Видаляємо префікс типу "20 Jun 2025" або "20 Jun" перед основним текстом
+                prefix_pattern = r'^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}\s*'
                 title = re.sub(prefix_pattern, '', title, flags=re.IGNORECASE).strip()
-
-                if len(title) > 10:
-                    half_length = len(title) // 2
-                    if title[half_length:] == title[:half_length]:
-                        title = title[:half_length].strip()
-                    elif title.count(title[:len(title)//3]) > 1:
-                        unique_part = re.match(r'^(.+?)(?:\1)', title)
-                        if unique_part:
-                            title = unique_part.group(1).strip()
+                
+                # Додаткова перевірка на дублювання
+                if title and title.count(title[:len(title)//3]) > 1:
+                    unique_part = re.match(r'^(.+?)(?:\1)', title)
+                    if unique_part:
+                        title = unique_part.group(1).strip()
 
                 parts = title.split(".", 1)
                 if len(parts) > 1 and parts[0].strip() in parts[1]:
@@ -270,12 +271,13 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
                     logger.info("Skipped: %s (Podcast/Webinar)", original_title)
                     continue
 
-                send_time = datetime.now().strftime("%H:%M %d/%m/%Y")
+                # Час відправлення у EEST
+                send_time = datetime.now(eest_tz).strftime("%H:%M %d/%m/%Y")
 
                 msg = (
                     f"📌 *New research from: {source}*\n"
                     f"📅 {send_time}\n"
-                    f"📰 **Title: {title}**\n"
+                    f"📰 **Title**: {title}**\n"
                     f"🔗 [Read the original]({url})\n\n"
                     "⬇️ Click below for a concise analysis:"
                 )
