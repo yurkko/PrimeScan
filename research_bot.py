@@ -220,7 +220,7 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Article Text:\n" + content
         )
         ua_data = {
-            "model": "anthropic/claude-sonnet-4",
+            "model": "openai/gpt-4.1",
             "messages": [{"role": "user", "content": ua_prompt}],
             "max_tokens": 1500
         }
