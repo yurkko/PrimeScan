@@ -253,15 +253,13 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
                 title, date, source = art["title"], art["date"], art["source"]
                 
                 original_title = title
-                # Видаляємо префікс типу "20 Jun 2025" або "20 Jun" перед основним текстом
-                prefix_pattern = r'^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}\s*'
+                # Розширений шаблон для видалення префіксів типу "Category - Date/Time ago" або "Date"
+                prefix_pattern = r'^(?:[A-Za-z]+\s*-\s*(?:\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}|\d+\s+(hours|days)\s+ago)\s*)*'
                 title = re.sub(prefix_pattern, '', title, flags=re.IGNORECASE).strip()
                 
-                # Додаткова перевірка на дублювання
-                if title and title.count(title[:len(title)//3]) > 1:
-                    unique_part = re.match(r'^(.+?)(?:\1)', title)
-                    if unique_part:
-                        title = unique_part.group(1).strip()
+                # Видалення дублювання за допомогою групування
+                if title:
+                    title = re.sub(r'(.+?)\1+', r'\1', title).strip()
 
                 parts = title.split(".", 1)
                 if len(parts) > 1 and parts[0].strip() in parts[1]:
