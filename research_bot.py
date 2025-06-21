@@ -13,6 +13,8 @@ from telegram.ext import (
 )
 import time
 import json  # Added for JSON file handling
+import logging
+from filelock import FileLock
 from dotenv import load_dotenv
 
 # --- Load environment variables ---
@@ -36,6 +38,7 @@ class ADMISMonitor:
                 self.seen = set(json.load(f))
         except (FileNotFoundError, json.JSONDecodeError):
             self.seen = set()
+        logger.info("Initialized ADMISMonitor with %d seen URLs", len(self.seen))
 
     def check_new(self):
         try:
@@ -57,10 +60,13 @@ class ADMISMonitor:
             date = date_tag.get_text(strip=True) if date_tag else ""
             source = "ADMIS Written Commentary"
             if url not in self.seen:
-                self.seen.add(url)
-                with open("seen_urls.txt", "w") as f:
-                    json.dump(list(self.seen), f)
+                with FileLock("seen_urls.txt.lock"):
+                    self.seen.add(url)
+                    with open("seen_urls.txt", "w") as f:
+                        json.dump(list(self.seen), f)
                 new.append({"title": title, "url": url, "date": date, "source": source})
+                logger.info("New URL added: %s", url)
+        logger.info("Checked ADMIS, found %d new articles", len(new))
         return new
 
 class SaxoMonitor:
@@ -73,6 +79,7 @@ class SaxoMonitor:
                 self.seen = set(json.load(f))
         except (FileNotFoundError, json.JSONDecodeError):
             self.seen = set()
+        logger.info("Initialized SaxoMonitor with %d seen URLs", len(self.seen))
 
     def check_new(self):
         try:
@@ -92,10 +99,13 @@ class SaxoMonitor:
                 continue
             url = href if href.startswith("http") else self.BASE_URL + href
             if url not in self.seen:
-                self.seen.add(url)
-                with open("seen_urls.txt", "w") as f:
-                    json.dump(list(self.seen), f)
+                with FileLock("seen_urls.txt.lock"):
+                    self.seen.add(url)
+                    with open("seen_urls.txt", "w") as f:
+                        json.dump(list(self.seen), f)
                 new.append({"title": title, "url": url, "date": "", "source": "Saxo Bank Research"})
+                logger.info("New URL added: %s", url)
+        logger.info("Checked Saxo, found %d new articles", len(new))
         return new
 
 # --- Globals ---
@@ -195,61 +205,59 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
     bot = context.bot
     monitors = [ADMISMonitor(), SaxoMonitor()]
-    new_articles = []  # Тимчасовий список для збору статей
+    new_articles = []
 
-    # Імпорт регулярних виразів і datetime
     import re
     from datetime import datetime
 
-    # Збираємо всі нові статті
+    seen_in_cycle = set()  # Тимчасовий набір для унікальності в циклі
     for mon in monitors:
         for art in mon.check_new():
-            title, url, date, source = art["title"], art["url"], art["date"], art["source"]
-            
-            # Видаляємо префікси та часові позначки
-            original_title = title
-            prefix_pattern = r'^(Options|Macro|Equities|Commodities|Podcast)\s*-\s*(\d+\s+(minutes|hours|days)\s+ago)?\s*'
-            title = re.sub(prefix_pattern, '', title, flags=re.IGNORECASE).strip()
+            url = art["url"]
+            if url not in seen_in_cycle:
+                seen_in_cycle.add(url)
+                title, date, source = art["title"], art["date"], art["source"]
+                
+                original_title = title
+                prefix_pattern = r'^(Options|Macro|Equities|Commodities|Podcast)\s*-\s*(\d+\s+(minutes|hours|days)\s+ago)?\s*'
+                title = re.sub(prefix_pattern, '', title, flags=re.IGNORECASE).strip()
 
-            # Видаляємо подвоєння тексту
-            if len(title) > 10:
-                half_length = len(title) // 2
-                if title[half_length:] == title[:half_length]:
-                    title = title[:half_length].strip()
-                elif title.count(title[:len(title)//3]) > 1:
-                    unique_part = re.match(r'^(.+?)(?:\1)', title)
-                    if unique_part:
-                        title = unique_part.group(1).strip()
+                if len(title) > 10:
+                    half_length = len(title) // 2
+                    if title[half_length:] == title[:half_length]:
+                        title = title[:half_length].strip()
+                    elif title.count(title[:len(title)//3]) > 1:
+                        unique_part = re.match(r'^(.+?)(?:\1)', title)
+                        if unique_part:
+                            title = unique_part.group(1).strip()
 
-            # Додаткова обробка подвоєння через крапку
-            parts = title.split(".", 1)
-            if len(parts) > 1 and parts[0].strip() in parts[1]:
-                title = parts[0].strip() + "."
+                parts = title.split(".", 1)
+                if len(parts) > 1 and parts[0].strip() in parts[1]:
+                    title = parts[0].strip() + "."
 
-            # Пропускаємо, якщо це Podcast або Webinar
-            if "podcast" in title.lower() or "webinar" in title.lower():
-                logger.info("Skipped: %s (Podcast/Webinar)", original_title)
-                continue
+                if "podcast" in title.lower() or "webinar" in title.lower():
+                    logger.info("Skipped: %s (Podcast/Webinar)", original_title)
+                    continue
 
-            # Час відправлення
-            send_time = datetime.now().strftime("%H:%M %d/%m/%Y")
+                send_time = datetime.now().strftime("%H:%M %d/%m/%Y")
 
-            msg = (
-                f"📌 *New research from: {source}*\n"
-                f"📅 {send_time}\n"
-                f"📰 *Title*: {title}\n"  # Повернуто "Title:" із жирним форматуванням
-                f"🔗 [Read the original]({url})\n\n"
-                "⬇️ Click below for a concise analysis:"
-            )
-            art_id = f"{source}_{hash(url)}"
-            pending_articles[art_id] = art
-            new_articles.append((msg, art_id))
+                msg = (
+                    f"📌 *New research from: {source}*\n"
+                    f"📅 {send_time}\n"
+                    f"📰 *Title*: {title}*\n"
+                    f"🔗 [Read the original]({url})\n\n"
+                    "⬇️ Click below for a concise analysis:"
+                )
+                art_id = f"{source}_{hash(url)}"
+                if art_id not in pending_articles:
+                    pending_articles[art_id] = art
+                    new_articles.append((msg, art_id))
 
-    # Відправляємо статті від старіших до новішої
+    logger.info("Found %d new articles in this cycle", len(new_articles))
     for msg, art_id in new_articles:
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🧠 Load Insights", callback_data=f"INSIGHTS|{art_id}")]])
         await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=kb, parse_mode='Markdown')
-        logger.info("Alert sent: %s", msg.split("\n")[2].replace("📰 **Title: ", "").replace("**", ""))  # Логуємо title
+        logger.info("Alert sent: %s", msg.split("\n")[2].replace("📰 **Title: ", "").replace("**", ""))
 
 # --- Entrypoint ---
 def main():
