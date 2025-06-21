@@ -159,25 +159,25 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from datetime import datetime
         full_date = date if date and date.lower() != "n/a" else datetime.now().strftime("%H:%M %d/%m/%Y")
 
-        # Генерація підсумку українською
+        # Генерація підсумку українською з деталями
         ua_prompt = (
-            "Підсумуйте наступну дослідницьку статтю українською мовою з цією точною структурою з емодзі та жирним текстом:\n"
-            "📰 *Title*: " + title + "\n"
-            "📌 *Key Points*:\n"
-            "  ▪️ [bullet point 1]\n"
-            "  ▪️ [bullet point 2]\n"
-            "  ▪️ [bullet point 3]\n"
-            "📊 *Impact on Markets*:\n"
-            "  ▪️ [impact description]\n"
-            "📚 *Source*: " + source + "\n"
-            "📅 *Date*: " + full_date + "\n"
-            "🔗 *Link*: " + url + "\n\n"
+            "Підсумуйте наступну дослідницьку статтю українською мовою з цією точною структурою з емодзі та жирним текстом, використовуючи деталі з тексту статті:\n"
+            "📰 **Title**: " + title + "\n"
+            "📌 **Key Points**:\n"
+            "  ▪️ [детальний пункт 1 з тексту статті]\n"
+            "  ▪️ [детальний пункт 2 з тексту статті]\n"
+            "  ▪️ [детальний пункт 3 з тексту статті]\n"
+            "📊 **Impact on Markets**:\n"
+            "  ▪️ [конкретний опис впливу на ринки на основі тексту статті]\n"
+            "📚 **Source**: " + source + "\n"
+            "📅 **Date**: " + full_date + "\n"
+            "🔗 **Link**: " + url + "\n\n"
             "Article Text:\n" + content
         )
         ua_data = {
-            "model": "openai/gpt-3.5-turbo",
+            "model": "openai/gpt-4.1",
             "messages": [{"role": "user", "content": ua_prompt}],
-            "max_tokens": 500
+            "max_tokens": 700  # Збільшено для уникнення обрізання
         }
         ua_response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=ua_data)
         ua_response.raise_for_status()
