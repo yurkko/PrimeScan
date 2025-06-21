@@ -155,9 +155,13 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Content-Type": "application/json"
         }
 
-        # Генерація підсумку англійською
-        en_prompt = (
-            "Summarize the following research article in English using this exact structure with emojis and bold text:\n"
+        # Використовуємо поточний час, якщо дата відсутня
+        from datetime import datetime
+        full_date = date if date and date.lower() != "n/a" else datetime.now().strftime("%H:%M %d/%m/%Y")
+
+        # Генерація підсумку українською
+        ua_prompt = (
+            "Підсумуйте наступну дослідницьку статтю українською мовою з цією точною структурою з емодзі та жирним текстом:\n"
             "📰 **Title**: " + title + "\n"
             "📌 **Key Points**:\n"
             "  ▪️ [bullet point 1]\n"
@@ -166,32 +170,8 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📊 **Impact on Markets**:\n"
             "  ▪️ [impact description]\n"
             "📚 **Source**: " + source + "\n"
-            "📅 **Date**: " + date + "\n"
+            "📅 **Date**: " + full_date + "\n"
             "🔗 **Link**: " + url + "\n\n"
-            "Article Text:\n" + content
-        )
-        en_data = {
-            "model": "openai/gpt-3.5-turbo",
-            "messages": [{"role": "user", "content": en_prompt}],
-            "max_tokens": 500
-        }
-        en_response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=en_data)
-        en_response.raise_for_status()
-        en_summary = en_response.json()["choices"][0]["message"]["content"]
-
-        # Генерація підсумку українською
-        ua_prompt = (
-            "Translate the following research article summary into Ukrainian using this exact structure with emojis and bold text:\n"
-            "📰 **Назва**: " + title + "\n"
-            "📌 **Ключові моменти**:\n"
-            "  ▪️ [bullet point 1]\n"
-            "  ▪️ [bullet point 2]\n"
-            "  ▪️ [bullet point 3]\n"
-            "📊 **Вплив на ринки**:\n"
-            "  ▪️ [impact description]\n"
-            "📚 **Джерело**: " + source + "\n"
-            "📅 *Дата*: " + date + "\n"
-            "🔗 **Посилання**: " + url + "\n\n"
             "Article Text:\n" + content
         )
         ua_data = {
@@ -203,9 +183,7 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ua_response.raise_for_status()
         ua_summary = ua_response.json()["choices"][0]["message"]["content"]
 
-        # Поєднання версій
-        final_summary = f"{en_summary}\n\n**Українська версія:**\n{ua_summary}"
-        await query.edit_message_text(text=final_summary, parse_mode='Markdown')
+        await query.edit_message_text(text=ua_summary, parse_mode='Markdown')
     except Exception as e:
         logger.error("OpenRouter error: %s", e)
         await query.edit_message_text("Error summarizing or translating.")
