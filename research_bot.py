@@ -162,16 +162,16 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Генерація підсумку українською
         ua_prompt = (
             "Підсумуйте наступну дослідницьку статтю українською мовою з цією точною структурою з емодзі та жирним текстом:\n"
-            "📰 **Title**: " + title + "\n"
-            "📌 **Key Points**:\n"
+            "📰 *Title*: " + title + "\n"
+            "📌 *Key Points*:\n"
             "  ▪️ [bullet point 1]\n"
             "  ▪️ [bullet point 2]\n"
             "  ▪️ [bullet point 3]\n"
-            "📊 **Impact on Markets**:\n"
+            "📊 *Impact on Markets*:\n"
             "  ▪️ [impact description]\n"
-            "📚 **Source**: " + source + "\n"
-            "📅 **Date**: " + full_date + "\n"
-            "🔗 **Link**: " + url + "\n\n"
+            "📚 *Source*: " + source + "\n"
+            "📅 *Date*: " + full_date + "\n"
+            "🔗 *Link*: " + url + "\n\n"
             "Article Text:\n" + content
         )
         ua_data = {
@@ -237,7 +237,7 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
             msg = (
                 f"📌 *New research from: {source}*\n"
                 f"📅 {send_time}\n"
-                f"📰 **Title: {title}**\n"  # Повернуто "Title:" із жирним форматуванням
+                f"📰 *Title: {title}*\n"  # Повернуто "Title:" із жирним форматуванням
                 f"🔗 [Read the original]({url})\n\n"
                 "⬇️ Click below for a concise analysis:"
             )
