@@ -258,7 +258,7 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
                 msg = (
                     f"📌 *New research from: {source}*\n"
                     f"📅 {send_time}\n"
-                    f"📰 **Title**: {title}*\n"  # Виправлено синтаксичну помилку (замінено * на **)
+                    f"📰 **Title: {title}**\n"
                     f"🔗 [Read the original]({url})\n\n"
                     "⬇️ Click below for a concise analysis:"
                 )
@@ -270,8 +270,15 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
     logger.info("Found %d new articles in this cycle", len(new_articles))
     for msg, art_id in new_articles:
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🧠 Load Insights", callback_data=f"INSIGHTS|{art_id}")]])
-        await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=kb, parse_mode='Markdown')
-        logger.info("Alert sent: %s", msg.split("\n")[2].replace("📰 **Title: ", "").replace("**", ""))
+        # Check and trim message if too long
+        if len(msg) > 4096:
+            msg = msg[:4093] + "..."
+        try:
+            await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=kb, parse_mode='Markdown')
+            logger.info("Alert sent: %s", msg.split("\n")[2].replace("📰 **Title: ", "").replace("**", ""))
+        except Exception as e:
+            logger.error("Failed to send message: %s", e)
+            await bot.send_message(chat_id=ADMIN_ID, text="Error sending message.", parse_mode='Markdown')
 
     # Збереження статей після циклу
     save_articles({"pending_articles": pending_articles})
