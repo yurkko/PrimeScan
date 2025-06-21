@@ -22,6 +22,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ALLOWED_USER_IDS = [int(x) for x in os.getenv("ALLOWED_USER_IDS", "").split(",") if x]  # Порожній список за замовчуванням
 
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
@@ -130,7 +131,8 @@ class SaxoMonitor:
 
 # --- /start handler ---
 async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    user_id = update.effective_user.id
+    if user_id not in [ADMIN_ID] + ALLOWED_USER_IDS:
         await update.message.reply_text("Unauthorized.")
         return
     await update.message.reply_text("Bot is running. I will notify you of new research articles.")
@@ -243,7 +245,7 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
     import pytz
 
     seen_in_cycle = set()
-    eest_tz = pytz.timezone("Europe/Kiev")  # Часовий пояс EEST
+    eest_tz = pytz.timezone("Europe/Kiev")
 
     for mon in monitors:
         for art in mon.check_new():
@@ -253,11 +255,9 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
                 title, date, source = art["title"], art["date"], art["source"]
                 
                 original_title = title
-                # Розширений шаблон для видалення префіксів типу "Category - Date/Time ago" або "Date"
                 prefix_pattern = r'^(?:[A-Za-z]+\s*-\s*(?:\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}|\d+\s+(hours|days)\s+ago)\s*)*'
                 title = re.sub(prefix_pattern, '', title, flags=re.IGNORECASE).strip()
                 
-                # Видалення дублювання за допомогою групування
                 if title:
                     title = re.sub(r'(.+?)\1+', r'\1', title).strip()
 
@@ -269,13 +269,12 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
                     logger.info("Skipped: %s (Podcast/Webinar)", original_title)
                     continue
 
-                # Час відправлення у EEST
                 send_time = datetime.now(eest_tz).strftime("%H:%M %d/%m/%Y")
 
                 msg = (
                     f"📌 *New research from: {source}*\n"
                     f"📅 {send_time}\n"
-                    f"📰 **Title**: {title}**\n"
+                    f"📰 *Title*: {title}**\n"
                     f"🔗 [Read the original]({url})\n\n"
                     "⬇️ Click below for a concise analysis:"
                 )
@@ -287,17 +286,16 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
     logger.info("Found %d new articles in this cycle", len(new_articles))
     for msg, art_id in new_articles:
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🧠 Load Insights", callback_data=f"INSIGHTS|{art_id}")]])
-        # Check and trim message if too long
         if len(msg) > 4096:
             msg = msg[:4093] + "..."
         try:
-            await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=kb, parse_mode='Markdown')
-            logger.info("Alert sent: %s", msg.split("\n")[2].replace("📰 **Title: ", "").replace("**", ""))
+            for user_id in [ADMIN_ID] + ALLOWED_USER_IDS:
+                await bot.send_message(chat_id=user_id, text=msg, reply_markup=kb, parse_mode='Markdown')
+                logger.info("Alert sent to %d: %s", user_id, msg.split("\n")[2].replace("📰 **Title: ", "").replace("**", ""))
         except Exception as e:
-            logger.error("Failed to send message: %s", e)
+            logger.error("Failed to send message to %d: %s", user_id, e)
             await bot.send_message(chat_id=ADMIN_ID, text="Error sending message.", parse_mode='Markdown')
 
-    # Збереження статей після циклу
     save_articles({"pending_articles": pending_articles})
 
 # --- Entrypoint ---
