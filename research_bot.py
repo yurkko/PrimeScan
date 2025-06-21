@@ -136,6 +136,9 @@ async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Bot is running. I will notify you of new research articles.")
 
 # --- Button callback ---
+from datetime import datetime
+import pytz
+
 async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -183,25 +186,39 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Content-Type": "application/json"
         }
 
-        from datetime import datetime
-        full_date = date if date and date.lower() != "n/a" else datetime.now().strftime("%H:%M %d/%m/%Y")
+        # Конвертація дати зі статті в EEST, якщо вона в UTC
+        if date and date.lower() != "n/a":
+            try:
+                # Розпарсити дату у форматі HH:MM DD/MM/YYYY
+                utc_time = datetime.strptime(date, "%H:%M %d/%m/%Y")
+                utc_tz = pytz.UTC
+                utc_time = utc_tz.localize(utc_time)
+                eest_tz = pytz.timezone("Europe/Kiev")  # Використано Europe/Kiev як EEST
+                eest_time = utc_time.astimezone(eest_tz)
+                full_date = eest_time.strftime("%H:%M %d/%m/%Y")
+            except ValueError:
+                full_date = date  # Якщо формат неправильний, залишимо як є
+        else:
+            # Поточний час у EEST
+            eest_tz = pytz.timezone("Europe/Kiev")
+            full_date = datetime.now(eest_tz).strftime("%H:%M %d/%m/%Y")
 
         ua_prompt = (
             "Підсумуйте наступну дослідницьку статтю українською мовою з цією точною структурою з емодзі та жирним текстом, використовуючи деталі з тексту статті:\n"
-            "📰 *Title*: " + title + "\n"
-            "📌 *Key Points*:\n"
+            "📰 **Title**: " + title + "\n"
+            "📌 **Key Points**:\n"
             "  ▪️ [детальний пункт 1 з тексту статті]\n"
             "  ▪️ [детальний пункт 2 з тексту статті]\n"
             "  ▪️ [детальний пункт 3 з тексту статті]\n"
-            "📊 *Impact on Markets*:\n"
+            "📊 **Impact on Markets**:\n"
             "  ▪️ [конкретний опис впливу на ринки на основі тексту статті]\n"
-            "📚 *Source*: " + source + "\n"
-            "📅 *Date*: " + full_date + "\n"
-            "🔗 *Link*: " + url + "\n\n"
+            "📚 **Source**: " + source + "\n"
+            "📅 **Date**: " + full_date + "\n"
+            "🔗 **Link**: " + url + "\n\n"
             "Article Text:\n" + content
         )
         ua_data = {
-            "model": "openai/gpt-4.1",
+            "model": "openai/gpt-3.5-turbo",
             "messages": [{"role": "user", "content": ua_prompt}],
             "max_tokens": 1500
         }
