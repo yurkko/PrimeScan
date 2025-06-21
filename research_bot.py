@@ -177,7 +177,7 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ua_data = {
             "model": "openai/gpt-4.1",
             "messages": [{"role": "user", "content": ua_prompt}],
-            "max_tokens": 700  # Збільшено для уникнення обрізання
+            "max_tokens": 1000  # Збільшено для уникнення обрізання
         }
         ua_response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=ua_data)
         ua_response.raise_for_status()
