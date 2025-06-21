@@ -20,12 +20,32 @@ from dotenv import load_dotenv
 # --- Load environment variables ---
 load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")  # Оновлено з OPENAI_API_KEY
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# --- Files ---
+ARTICLES_FILE = "articles.json"
+SEEN_URLS_FILE = "seen_urls.txt"
+
+# --- Load and save articles ---
+def load_articles():
+    try:
+        with open(ARTICLES_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"pending_articles": {}}
+
+def save_articles(articles):
+    with open(ARTICLES_FILE, "w") as f:
+        json.dump(articles, f)
+
+# --- Initialize global data ---
+articles_data = load_articles()
+pending_articles = articles_data["pending_articles"]
 
 # --- Monitors ---
 class ADMISMonitor:
@@ -34,7 +54,7 @@ class ADMISMonitor:
 
     def __init__(self):
         try:
-            with open("seen_urls.txt", "r") as f:
+            with open(SEEN_URLS_FILE, "r") as f:
                 self.seen = set(json.load(f))
         except (FileNotFoundError, json.JSONDecodeError):
             self.seen = set()
@@ -60,9 +80,9 @@ class ADMISMonitor:
             date = date_tag.get_text(strip=True) if date_tag else ""
             source = "ADMIS Written Commentary"
             if url not in self.seen:
-                with FileLock("seen_urls.txt.lock"):
+                with FileLock(f"{SEEN_URLS_FILE}.lock"):
                     self.seen.add(url)
-                    with open("seen_urls.txt", "w") as f:
+                    with open(SEEN_URLS_FILE, "w") as f:
                         json.dump(list(self.seen), f)
                 new.append({"title": title, "url": url, "date": date, "source": source})
                 logger.info("New URL added: %s", url)
@@ -75,7 +95,7 @@ class SaxoMonitor:
 
     def __init__(self):
         try:
-            with open("seen_urls.txt", "r") as f:
+            with open(SEEN_URLS_FILE, "r") as f:
                 self.seen = set(json.load(f))
         except (FileNotFoundError, json.JSONDecodeError):
             self.seen = set()
@@ -99,17 +119,14 @@ class SaxoMonitor:
                 continue
             url = href if href.startswith("http") else self.BASE_URL + href
             if url not in self.seen:
-                with FileLock("seen_urls.txt.lock"):
+                with FileLock(f"{SEEN_URLS_FILE}.lock"):
                     self.seen.add(url)
-                    with open("seen_urls.txt", "w") as f:
+                    with open(SEEN_URLS_FILE, "w") as f:
                         json.dump(list(self.seen), f)
                 new.append({"title": title, "url": url, "date": "", "source": "Saxo Bank Research"})
                 logger.info("New URL added: %s", url)
         logger.info("Checked Saxo, found %d new articles", len(new))
         return new
-
-# --- Globals ---
-pending_articles = {}
 
 # --- /start handler ---
 async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -128,7 +145,8 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     art_id = data.split("|", 1)[1]
     article = pending_articles.get(art_id)
     if not article:
-        await query.edit_message_text("Article info not found.")
+        await query.edit_message_text("Стаття не знайдена. Можливо, вона застаріла або була видалена.")
+        logger.error("Стаття не знайдена для art_id: %s", art_id)
         return
 
     title, url, source, date = (
@@ -165,23 +183,21 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Content-Type": "application/json"
         }
 
-        # Використовуємо поточний час, якщо дата відсутня
         from datetime import datetime
         full_date = date if date and date.lower() != "n/a" else datetime.now().strftime("%H:%M %d/%m/%Y")
 
-        # Генерація підсумку українською з деталями
         ua_prompt = (
             "Підсумуйте наступну дослідницьку статтю українською мовою з цією точною структурою з емодзі та жирним текстом, використовуючи деталі з тексту статті:\n"
-            "📰 *Title*: " + title + "\n"
-            "📌 *Key Points*:\n"
+            "📰 **Title**: " + title + "\n"
+            "📌 **Key Points**:\n"
             "  ▪️ [детальний пункт 1 з тексту статті]\n"
             "  ▪️ [детальний пункт 2 з тексту статті]\n"
             "  ▪️ [детальний пункт 3 з тексту статті]\n"
-            "📊 *Impact on Markets*:\n"
+            "📊 **Impact on Markets**:\n"
             "  ▪️ [конкретний опис впливу на ринки на основі тексту статті]\n"
-            "📚 *Source*: " + source + "\n"
-            "📅 *Date*: " + full_date + "\n"
-            "🔗 *Link*: " + url + "\n\n"
+            "📚 **Source**: " + source + "\n"
+            "📅 **Date**: " + full_date + "\n"
+            "🔗 **Link**: " + url + "\n\n"
             "Article Text:\n" + content
         )
         ua_data = {
@@ -199,8 +215,6 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Error summarizing or translating.")
         return
 
-    await query.edit_message_text(text=summary, parse_mode='Markdown')
-
 # --- Periodic job ---
 async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
     bot = context.bot
@@ -210,7 +224,7 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
     import re
     from datetime import datetime
 
-    seen_in_cycle = set()  # Тимчасовий набір для унікальності в циклі
+    seen_in_cycle = set()
     for mon in monitors:
         for art in mon.check_new():
             url = art["url"]
@@ -244,7 +258,7 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
                 msg = (
                     f"📌 *New research from: {source}*\n"
                     f"📅 {send_time}\n"
-                    f"📰 *Title*: {title}*\n"
+                    f"📰 **Title**: {title}*\n"  # Виправлено синтаксичну помилку (замінено * на **)
                     f"🔗 [Read the original]({url})\n\n"
                     "⬇️ Click below for a concise analysis:"
                 )
@@ -259,6 +273,9 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
         await bot.send_message(chat_id=ADMIN_ID, text=msg, reply_markup=kb, parse_mode='Markdown')
         logger.info("Alert sent: %s", msg.split("\n")[2].replace("📰 **Title: ", "").replace("**", ""))
 
+    # Збереження статей після циклу
+    save_articles({"pending_articles": pending_articles})
+
 # --- Entrypoint ---
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -267,10 +284,10 @@ def main():
     app.add_handler(CommandHandler("start", start_bot))
     app.add_handler(CallbackQueryHandler(insights_callback, pattern=r"^INSIGHTS\|"))
 
-    # Schedule scraping every 10 minutes
+    # Schedule scraping every minute
     app.job_queue.run_repeating(check_sites_callback, interval=60, first=5)
 
-    # Start polling (blocks, handles its own loop)
+    # Start polling
     time.sleep(10)
     app.run_polling(drop_pending_updates=True)
 
