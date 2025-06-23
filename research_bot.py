@@ -19,6 +19,8 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import pytz
 import re
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 
 # --- Load environment variables ---
 load_dotenv()
@@ -55,7 +57,7 @@ pending_articles = articles_data["pending_articles"]
 class ADMISMonitor:
     BASE_URL = "https://www.admis.com"
     LIST_URL = BASE_URL + "/market-information/written-commentary/"
-    SEEN_URLS_FILE = "seen_urls_admis.json"  # Окремий файл для ADMIS
+    SEEN_URLS_FILE = "seen_urls_admis.json"
 
     def __init__(self):
         try:
@@ -82,18 +84,19 @@ class ADMISMonitor:
             href = a['href']
             url = href if href.startswith("http") else self.BASE_URL + href
             date_tag = h3.find_next_sibling("p")
-            date = date_tag.get_text(strip=True) if date_tag else ""
+            raw_date = date_tag.get_text(strip=True) if date_tag else ""
             try:
-                parsed_date = datetime.strptime(date, "%B %d, %Y")
+                parsed_date = datetime.strptime(raw_date, "%B %d, %Y")
                 date = parsed_date.strftime("%H:%M %d/%m/%Y")
             except (ValueError, TypeError):
-                date = date
+                date = raw_date
             source = "ADMIS Written Commentary"
             if url not in self.seen:
                 with FileLock(f"{self.SEEN_URLS_FILE}.lock"):
                     self.seen.add(url)
                     with open(self.SEEN_URLS_FILE, "w") as f:
                         json.dump(list(self.seen), f)
+                    logger.info("Written to %s: %s", self.SEEN_URLS_FILE, url)
                 new.append({"title": title, "url": url, "date": date, "source": source})
                 logger.info("New URL added: %s", url)
         logger.info("Checked ADMIS, found %d new articles", len(new))
@@ -102,7 +105,7 @@ class ADMISMonitor:
 class SaxoMonitor:
     INSIGHTS_URL = "https://www.home.saxo/insights"
     BASE_URL = "https://www.home.saxo"
-    SEEN_URLS_FILE = "seen_urls_saxo.json"  # Окремий файл для Saxo
+    SEEN_URLS_FILE = "seen_urls_saxo.json"
 
     def __init__(self):
         try:
@@ -129,13 +132,14 @@ class SaxoMonitor:
             if not title or len(title) < 5:
                 continue
             url = href if href.startswith("http") else self.BASE_URL + href
-            date = ""  # Saxo не завжди має дату на сторінці
+            date = ""
             source = "Saxo Bank Research"
             if url not in self.seen:
                 with FileLock(f"{self.SEEN_URLS_FILE}.lock"):
                     self.seen.add(url)
                     with open(self.SEEN_URLS_FILE, "w") as f:
                         json.dump(list(self.seen), f)
+                    logger.info("Written to %s: %s", self.SEEN_URLS_FILE, url)
                 new.append({"title": title, "url": url, "date": date, "source": source})
                 logger.info("New URL added: %s", url)
         logger.info("Checked Saxo, found %d new articles", len(new))
@@ -144,7 +148,7 @@ class SaxoMonitor:
 class SSGAInsightsMonitor:
     BASE_URL = "https://www.ssga.com"
     INSIGHTS_URL = BASE_URL + "/us/en/institutional/insights"
-    SEEN_URLS_FILE = "seen_urls_ssga.json"  # Окремий файл для SSGA
+    SEEN_URLS_FILE = "seen_urls_ssga.json"
 
     def __init__(self):
         try:
@@ -153,6 +157,7 @@ class SSGAInsightsMonitor:
         except (FileNotFoundError, json.JSONDecodeError):
             self.seen = set()
         logger.info("Ініціалізовано SSGAInsightsMonitor з %d переглянутими URL", len(self.seen))
+
     def check_new(self):
         try:
             resp = requests.get(self.INSIGHTS_URL, headers={'User-Agent': 'Mozilla/5.0'})
@@ -163,12 +168,12 @@ class SSGAInsightsMonitor:
         except Exception as e:
             logger.error("Не вдалося отримати сторінку SSGA Insights: %s", e)
             return []
-    
-        if not results_list:
-            logger.warning("Список статей не знайдено, можливо, JavaScript-завантаження. HTML: %s", soup.prettify()[:500])
+
+        # Перевірка, чи список <li> порожній
+        items = results_list.find_all("li", recursive=False) if results_list else []
+        if not results_list or not items:
+            logger.warning("Список статей порожній або не знайдено, використовуємо Selenium. HTML: %s", soup.prettify()[:500])
             try:
-                from selenium import webdriver
-                from selenium.webdriver.chrome.options import Options
                 options = Options()
                 options.add_argument("--headless")
                 options.add_argument("--disable-gpu")
@@ -178,27 +183,27 @@ class SSGAInsightsMonitor:
                 soup = BeautifulSoup(driver.page_source, 'html.parser')
                 driver.quit()
                 results_list = soup.find("ul", class_="results-list")
-                logger.info("Results list from Selenium: %s", "Found" if results_list else "Not found")
-                if not results_list:
+                items = results_list.find_all("li", recursive=False) if results_list else []
+                logger.info("Results list from Selenium: %s, found %d <li> items", "Found" if results_list else "Not found", len(items))
+                if not results_list or not items:
                     logger.error("Selenium не знайшов список статей. HTML: %s", soup.prettify()[:500])
                     return []
             except Exception as e:
                 logger.error("Selenium помилка: %s", e)
                 return []
-    
+
         new_articles = []
-        items = results_list.find_all("li", recursive=False)
         logger.info("Found %d <li> items in results_list", len(items))
         for item in items:
             title_tag = item.find("h2")
             title = title_tag.get_text(strip=True) if title_tag else "Без заголовка"
             logger.info("Processing item with title: %s", title)
-    
+
             link_tag = item.find("a", href=True)
             href = link_tag["href"] if link_tag else ""
             url = href if href.startswith("http") else self.BASE_URL + href
             logger.info("URL: %s", url)
-    
+
             date_tag = item.find("time")
             raw_date = date_tag.get_text(strip=True) if date_tag else ""
             try:
@@ -215,7 +220,7 @@ class SSGAInsightsMonitor:
                     except (ValueError, TypeError):
                         date = raw_date
             logger.info("Date: %s", date)
-    
+
             source = "SSGA Insights"
             if url and url not in self.seen:
                 with FileLock(f"{self.SEEN_URLS_FILE}.lock"):
@@ -227,7 +232,7 @@ class SSGAInsightsMonitor:
                 logger.info("Додано нову статтю: %s", url)
             else:
                 logger.info("URL already seen or empty: %s", url)
-    
+
         logger.info("Перевірено SSGA Insights, знайдено %d нових статей", len(new_articles))
         return new_articles
 
@@ -360,17 +365,18 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
                 title, date, source = art["title"], art["date"], art["source"]
                 original_title = title
 
-                # Очищення заголовка з тестуванням регулярних виразів
+                # Очищення заголовка
                 prefix_pattern = r'^(?:\w+\s*-\s*(?:\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}|\d+\s+(?:hours|days)\s+ago)\s*)*'
                 title = re.sub(prefix_pattern, '', title, flags=re.IGNORECASE).strip()
                 if not title:
-                    title = original_title  # Повернення оригіналу, якщо заголовок став порожнім
+                    title = original_title
                 title = re.sub(r'(.+?)\1+', r'\1', title).strip()
                 parts = title.split(".", 1)
                 if len(parts) > 1 and parts[0].strip() in parts[1]:
                     title = parts[0].strip() + "."
 
-                if "podcast" in title.lower() or "webinar" in title.lower():
+                # Фільтр podcast/webinar у заголовку та URL
+                if "podcast" in title.lower() or "webinar" in title.lower() or "podcast" in url.lower() or "webinar" in url.lower():
                     logger.info("Skipped: %s (Podcast/Webinar)", original_title)
                     continue
 
@@ -394,7 +400,7 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
         if len(msg) > 4096:
             title_end = msg.find("🔗 [Read the original]")
             if title_end != -1:
-                msg = msg[:title_end].strip()[:4000] + f"\n🔗 [Read the original]({new_articles[0][0].split('🔗 [Read the original](')[1].split(')')[0]})"
+                msg = msg[:title_end].strip()[:4000] + f"\n🔗 [Read the original]({url})"
         for user_id in allowed_users:
             try:
                 await bot.send_message(chat_id=user_id, text=msg, reply_markup=kb, parse_mode='Markdown')
