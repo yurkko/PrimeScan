@@ -155,69 +155,73 @@ class SSGAInsightsMonitor:
         logger.info("Ініціалізовано SSGAInsightsMonitor з %d переглянутими URL", len(self.seen))
 
     def check_new(self):
-    try:
-        resp = requests.get(self.INSIGHTS_URL, headers={'User-Agent': 'Mozilla/5.0'})
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        results_list = soup.find("ul", class_="results-list")
-        logger.info("Results list from requests: %s", "Found" if results_list else "Not found")
-    except Exception as e:
-        logger.error("Не вдалося отримати сторінку SSGA Insights: %s", e)
-        return []
-
-    if not results_list:
-        logger.warning("Список статей не знайдено, можливо, JavaScript-завантаження. HTML: %s", soup.prettify()[:500])
         try:
-            from selenium import webdriver
-            from selenium.webdriver.chrome.options import Options
-            options = Options()
-            options.add_argument("--headless")
-            options.add_argument("--disable-gpu")
-            driver = webdriver.Chrome(options=options)
-            driver.get(self.INSIGHTS_URL)
-            time.sleep(5)
-            soup = BeautifulSoup(driver.page_source, 'html.parser')
-            driver.quit()
+            resp = requests.get(self.INSIGHTS_URL, headers={'User-Agent': 'Mozilla/5.0'})
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, 'html.parser')
             results_list = soup.find("ul", class_="results-list")
-            logger.info("Results list from Selenium: %s", "Found" if results_list else "Not found")
-            if not results_list:
-                logger.error("Selenium не знайшов список статей. HTML: %s", soup.prettify()[:500])
-                return []
+            logger.info("Results list from requests: %s", "Found" if results_list else "Not found")
         except Exception as e:
-            logger.error("Selenium помилка: %s", e)
+            logger.error("Не вдалося отримати сторінку SSGA Insights: %s", e)
             return []
-
-    new_articles = []
+    
+        if not results_list:
+            logger.warning("Список статей не знайдено, можливо, JavaScript-завантаження. HTML: %s", soup.prettify()[:500])
+            try:
+                from selenium import webdriver
+                from selenium.webdriver.chrome.options import Options
+                options = Options()
+                options.add_argument("--headless")
+                options.add_argument("--disable-gpu")
+                driver = webdriver.Chrome(options=options)
+                driver.get(self.INSIGHTS_URL)
+                time.sleep(5)
+                soup = BeautifulSoup(driver.page_source, 'html.parser')
+                driver.quit()
+                results_list = soup.find("ul", class_="results-list")
+                logger.info("Results list from Selenium: %s", "Found" if results_list else "Not found")
+                if not results_list:
+                    logger.error("Selenium не знайшов список статей. HTML: %s", soup.prettify()[:500])
+                    return []
+            except Exception as e:
+                logger.error("Selenium помилка: %s", e)
+                return []
+    
+        new_articles = []
         for item in results_list.find_all("li", recursive=False):
             title_tag = item.find("h2")
             title = title_tag.get_text(strip=True) if title_tag else "Без заголовка"
-
+    
             link_tag = item.find("a", href=True)
             href = link_tag["href"] if link_tag else ""
             url = href if href.startswith("http") else self.BASE_URL + href
-
+    
             date_tag = item.find("time")
             raw_date = date_tag.get_text(strip=True) if date_tag else ""
-            # Нормалізація дати
             try:
-                parsed_date = datetime.strptime(raw_date, "%B %d, %Y")  # Наприклад, "October 10, 2024"
+                parsed_date = datetime.strptime(raw_date, "%B %d, %Y")
                 date = parsed_date.strftime("%H:%M %d/%m/%Y")
             except (ValueError, TypeError):
                 try:
-                    parsed_date = datetime.strptime(raw_date, "%m/%d/%Y")  # Альтернативний формат
+                    parsed_date = datetime.strptime(raw_date, "%m/%d/%Y")
                     date = parsed_date.strftime("%H:%M %d/%m/%Y")
                 except (ValueError, TypeError):
-                    date = raw_date  # Якщо формат невідомий, залишити як є
-
+                    try:
+                        parsed_date = datetime.strptime(raw_date, "%Y-%m-%d")
+                        date = parsed_date.strftime("%H:%M %d/%m/%Y")
+                    except (ValueError, TypeError):
+                        date = raw_date
+    
             source = "SSGA Insights"
             if url and url not in self.seen:
                 with FileLock(f"{self.SEEN_URLS_FILE}.lock"):
                     self.seen.add(url)
                     with open(self.SEEN_URLS_FILE, "w") as f:
                         json.dump(list(self.seen), f)
+                    logger.info("Written to %s: %s", self.SEEN_URLS_FILE, url)
                 new_articles.append({"title": title, "url": url, "date": date, "source": source})
                 logger.info("Додано нову статтю: %s", url)
-
+    
         logger.info("Перевірено SSGA Insights, знайдено %d нових статей", len(new_articles))
         return new_articles
 
