@@ -155,38 +155,39 @@ class SSGAInsightsMonitor:
         logger.info("Ініціалізовано SSGAInsightsMonitor з %d переглянутими URL", len(self.seen))
 
     def check_new(self):
+    try:
+        resp = requests.get(self.INSIGHTS_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        results_list = soup.find("ul", class_="results-list")
+        logger.info("Results list from requests: %s", "Found" if results_list else "Not found")
+    except Exception as e:
+        logger.error("Не вдалося отримати сторінку SSGA Insights: %s", e)
+        return []
+
+    if not results_list:
+        logger.warning("Список статей не знайдено, можливо, JavaScript-завантаження. HTML: %s", soup.prettify()[:500])
         try:
-            resp = requests.get(self.INSIGHTS_URL, headers={'User-Agent': 'Mozilla/5.0'})
-            resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, 'html.parser')
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options
+            options = Options()
+            options.add_argument("--headless")
+            options.add_argument("--disable-gpu")
+            driver = webdriver.Chrome(options=options)
+            driver.get(self.INSIGHTS_URL)
+            time.sleep(5)
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+            driver.quit()
             results_list = soup.find("ul", class_="results-list")
+            logger.info("Results list from Selenium: %s", "Found" if results_list else "Not found")
+            if not results_list:
+                logger.error("Selenium не знайшов список статей. HTML: %s", soup.prettify()[:500])
+                return []
         except Exception as e:
-            logger.error("Не вдалося отримати сторінку SSGA Insights: %s", e)
+            logger.error("Selenium помилка: %s", e)
             return []
 
-        if not results_list:
-            logger.warning("Список статей не знайдено, можливо, JavaScript-завантаження")
-            # Спроба з Selenium (вимагає встановлення: pip install selenium)
-            try:
-                from selenium import webdriver
-                from selenium.webdriver.chrome.options import Options
-                options = Options()
-                options.add_argument("--headless")
-                options.add_argument("--disable-gpu")
-                driver = webdriver.Chrome(options=options)
-                driver.get(self.INSIGHTS_URL)
-                time.sleep(5)  # Чекаємо завантаження JS
-                soup = BeautifulSoup(driver.page_source, 'html.parser')
-                driver.quit()
-                results_list = soup.find("ul", class_="results-list")
-                if not results_list:
-                    logger.error("Selenium не знайшов список статей. HTML: %s", soup.prettify()[:500])
-                    return []
-            except Exception as e:
-                logger.error("Selenium помилка: %s", e)
-                return []
-
-        new_articles = []
+    new_articles = []
         for item in results_list.find_all("li", recursive=False):
             title_tag = item.find("h2")
             title = title_tag.get_text(strip=True) if title_tag else "Без заголовка"
