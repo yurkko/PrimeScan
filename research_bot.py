@@ -129,6 +129,75 @@ class SaxoMonitor:
         logger.info("Checked Saxo, found %d new articles", len(new))
         return new
 
+class SSGAInsightsMonitor:
+    BASE_URL = "https://www.ssga.com"
+    INSIGHTS_URL = BASE_URL + "/us/en/institutional/insights"
+
+    def __init__(self):
+        """Ініціалізація монітора з набором переглянутих URL."""
+        try:
+            with open(SEEN_URLS_FILE, "r") as f:
+                self.seen = set(json.load(f))
+        except (FileNotFoundError, json.JSONDecodeError):
+            self.seen = set()
+        logger.info("Ініціалізовано SSGAInsightsMonitor з %d переглянутими URL", len(self.seen))
+
+    def check_new(self):
+        """Перевірка нових статей на сторінці Insights."""
+        try:
+            # Виконуємо запит до сторінки з заголовком User-Agent
+            resp = requests.get(self.INSIGHTS_URL, headers={'User-Agent': 'Mozilla/5.0'})
+            resp.raise_for_status()
+        except Exception as e:
+            logger.error("Не вдалося отримати сторінку SSGA Insights: %s", e)
+            return []
+
+        # Парсимо HTML
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        new_articles = []
+
+        # Знаходимо список статей (динамічний список у <ul class="results-list">)
+        results_list = soup.find("ul", class_="results-list")
+        if not results_list:
+            logger.warning("Список статей не знайдено на сторінці")
+            return []
+
+        # Проходимо по кожному елементу списку
+        for item in results_list.find_all("li", recursive=False):
+            # Отримуємо заголовок
+            title_tag = item.find("h2")
+            title = title_tag.get_text(strip=True) if title_tag else "Без заголовка"
+
+            # Отримуємо URL
+            link_tag = item.find("a", href=True)
+            href = link_tag["href"] if link_tag else ""
+            url = href if href.startswith("http") else self.BASE_URL + href
+
+            # Отримуємо дату
+            date_tag = item.find("time")
+            date = date_tag.get_text(strip=True) if date_tag else ""
+
+            # Джерело
+            source = "SSGA Insights"
+
+            # Перевіряємо, чи є стаття новою
+            if url and url not in self.seen:
+                with FileLock(f"{SEEN_URLS_FILE}.lock"):
+                    self.seen.add(url)
+                    with open(SEEN_URLS_FILE, "w") as f:
+                        json.dump(list(self.seen), f)
+                new_articles.append({"title": title, "url": url, "date": date, "source": source})
+                logger.info("Додано нову статтю: %s", url)
+
+        logger.info("Перевірено SSGA Insights, знайдено %d нових статей", len(new_articles))
+        return new_articles
+
+    def save_seen_urls(self):
+        """Збереження переглянутих URL у файл."""
+        with FileLock(f"{SEEN_URLS_FILE}.lock"):
+            with open(SEEN_URLS_FILE, "w") as f:
+                json.dump(list(self.seen), f)
+
 # --- /start handler ---
 async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -237,7 +306,7 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Periodic job ---
 async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
     bot = context.bot
-    monitors = [ADMISMonitor(), SaxoMonitor()]
+    monitors = [ADMISMonitor(), SaxoMonitor(), SSGAInsightsMonitor()]
     new_articles = []
 
     import re
