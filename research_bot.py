@@ -153,7 +153,6 @@ class SSGAInsightsMonitor:
         except (FileNotFoundError, json.JSONDecodeError):
             self.seen = set()
         logger.info("Ініціалізовано SSGAInsightsMonitor з %d переглянутими URL", len(self.seen))
-
     def check_new(self):
         try:
             resp = requests.get(self.INSIGHTS_URL, headers={'User-Agent': 'Mozilla/5.0'})
@@ -188,13 +187,17 @@ class SSGAInsightsMonitor:
                 return []
     
         new_articles = []
-        for item in results_list.find_all("li", recursive=False):
+        items = results_list.find_all("li", recursive=False)
+        logger.info("Found %d <li> items in results_list", len(items))
+        for item in items:
             title_tag = item.find("h2")
             title = title_tag.get_text(strip=True) if title_tag else "Без заголовка"
+            logger.info("Processing item with title: %s", title)
     
             link_tag = item.find("a", href=True)
             href = link_tag["href"] if link_tag else ""
             url = href if href.startswith("http") else self.BASE_URL + href
+            logger.info("URL: %s", url)
     
             date_tag = item.find("time")
             raw_date = date_tag.get_text(strip=True) if date_tag else ""
@@ -211,6 +214,7 @@ class SSGAInsightsMonitor:
                         date = parsed_date.strftime("%H:%M %d/%m/%Y")
                     except (ValueError, TypeError):
                         date = raw_date
+            logger.info("Date: %s", date)
     
             source = "SSGA Insights"
             if url and url not in self.seen:
@@ -221,6 +225,8 @@ class SSGAInsightsMonitor:
                     logger.info("Written to %s: %s", self.SEEN_URLS_FILE, url)
                 new_articles.append({"title": title, "url": url, "date": date, "source": source})
                 logger.info("Додано нову статтю: %s", url)
+            else:
+                logger.info("URL already seen or empty: %s", url)
     
         logger.info("Перевірено SSGA Insights, знайдено %d нових статей", len(new_articles))
         return new_articles
