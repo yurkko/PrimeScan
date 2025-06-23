@@ -13,14 +13,14 @@ from telegram.ext import (
 )
 import time
 import json
-import logging
 from filelock import FileLock
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import pytz
 import re
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
 # --- Load environment variables ---
 load_dotenv()
@@ -171,13 +171,16 @@ class SSGAInsightsMonitor:
 
         # Перевірка, чи список <li> порожній
         items = results_list.find_all("li", recursive=False) if results_list else []
+        logger.info("Found %d <li> items in results_list from requests", len(items))
         if not results_list or not items:
             logger.warning("Список статей порожній або не знайдено, використовуємо Selenium. HTML: %s", soup.prettify()[:500])
             try:
-                options = Options()
+                options = webdriver.ChromeOptions()
                 options.add_argument("--headless")
                 options.add_argument("--disable-gpu")
-                driver = webdriver.Chrome(options=options)
+                options.add_argument("--no-sandbox")
+                options.add_argument("--disable-dev-shm-usage")
+                driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
                 driver.get(self.INSIGHTS_URL)
                 time.sleep(5)
                 soup = BeautifulSoup(driver.page_source, 'html.parser')
@@ -193,7 +196,6 @@ class SSGAInsightsMonitor:
                 return []
 
         new_articles = []
-        logger.info("Found %d <li> items in results_list", len(items))
         for item in items:
             title_tag = item.find("h2")
             title = title_tag.get_text(strip=True) if title_tag else "Без заголовка"
