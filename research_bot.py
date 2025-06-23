@@ -12,22 +12,17 @@ from telegram.ext import (
     ContextTypes,
 )
 import time
-import json
+import json  # Added for JSON file handling
+import logging
 from filelock import FileLock
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
-import pytz
-import re
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 
 # --- Load environment variables ---
 load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
-ALLOWED_USER_IDS = [int(x) for x in os.getenv("ALLOWED_USER_IDS", "").split(",") if x]
+ALLOWED_USER_IDS = [int(x) for x in os.getenv("ALLOWED_USER_IDS", "").split(",") if x]  # Порожній список за замовчуванням
 
 # --- Logging ---
 logging.basicConfig(level=logging.INFO)
@@ -35,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 # --- Files ---
 ARTICLES_FILE = "articles.json"
+SEEN_URLS_FILE = "seen_urls.txt"
 
 # --- Load and save articles ---
 def load_articles():
@@ -45,9 +41,8 @@ def load_articles():
         return {"pending_articles": {}}
 
 def save_articles(articles):
-    with FileLock(f"{ARTICLES_FILE}.lock"):
-        with open(ARTICLES_FILE, "w") as f:
-            json.dump(articles, f)
+    with open(ARTICLES_FILE, "w") as f:
+        json.dump(articles, f)
 
 # --- Initialize global data ---
 articles_data = load_articles()
@@ -57,11 +52,10 @@ pending_articles = articles_data["pending_articles"]
 class ADMISMonitor:
     BASE_URL = "https://www.admis.com"
     LIST_URL = BASE_URL + "/market-information/written-commentary/"
-    SEEN_URLS_FILE = "seen_urls_admis.json"
 
     def __init__(self):
         try:
-            with open(self.SEEN_URLS_FILE, "r") as f:
+            with open(SEEN_URLS_FILE, "r") as f:
                 self.seen = set(json.load(f))
         except (FileNotFoundError, json.JSONDecodeError):
             self.seen = set()
@@ -84,19 +78,13 @@ class ADMISMonitor:
             href = a['href']
             url = href if href.startswith("http") else self.BASE_URL + href
             date_tag = h3.find_next_sibling("p")
-            raw_date = date_tag.get_text(strip=True) if date_tag else ""
-            try:
-                parsed_date = datetime.strptime(raw_date, "%B %d, %Y")
-                date = parsed_date.strftime("%H:%M %d/%m/%Y")
-            except (ValueError, TypeError):
-                date = raw_date
+            date = date_tag.get_text(strip=True) if date_tag else ""
             source = "ADMIS Written Commentary"
             if url not in self.seen:
-                with FileLock(f"{self.SEEN_URLS_FILE}.lock"):
+                with FileLock(f"{SEEN_URLS_FILE}.lock"):
                     self.seen.add(url)
-                    with open(self.SEEN_URLS_FILE, "w") as f:
+                    with open(SEEN_URLS_FILE, "w") as f:
                         json.dump(list(self.seen), f)
-                    logger.info("Written to %s: %s", self.SEEN_URLS_FILE, url)
                 new.append({"title": title, "url": url, "date": date, "source": source})
                 logger.info("New URL added: %s", url)
         logger.info("Checked ADMIS, found %d new articles", len(new))
@@ -105,11 +93,10 @@ class ADMISMonitor:
 class SaxoMonitor:
     INSIGHTS_URL = "https://www.home.saxo/insights"
     BASE_URL = "https://www.home.saxo"
-    SEEN_URLS_FILE = "seen_urls_saxo.json"
 
     def __init__(self):
         try:
-            with open(self.SEEN_URLS_FILE, "r") as f:
+            with open(SEEN_URLS_FILE, "r") as f:
                 self.seen = set(json.load(f))
         except (FileNotFoundError, json.JSONDecodeError):
             self.seen = set()
@@ -132,111 +119,15 @@ class SaxoMonitor:
             if not title or len(title) < 5:
                 continue
             url = href if href.startswith("http") else self.BASE_URL + href
-            date = ""
-            source = "Saxo Bank Research"
             if url not in self.seen:
-                with FileLock(f"{self.SEEN_URLS_FILE}.lock"):
+                with FileLock(f"{SEEN_URLS_FILE}.lock"):
                     self.seen.add(url)
-                    with open(self.SEEN_URLS_FILE, "w") as f:
+                    with open(SEEN_URLS_FILE, "w") as f:
                         json.dump(list(self.seen), f)
-                    logger.info("Written to %s: %s", self.SEEN_URLS_FILE, url)
-                new.append({"title": title, "url": url, "date": date, "source": source})
+                new.append({"title": title, "url": url, "date": "", "source": "Saxo Bank Research"})
                 logger.info("New URL added: %s", url)
         logger.info("Checked Saxo, found %d new articles", len(new))
         return new
-
-class SSGAInsightsMonitor:
-    BASE_URL = "https://www.ssga.com"
-    INSIGHTS_URL = BASE_URL + "/us/en/institutional/insights"
-    SEEN_URLS_FILE = "seen_urls_ssga.json"
-
-    def __init__(self):
-        try:
-            with open(self.SEEN_URLS_FILE, "r") as f:
-                self.seen = set(json.load(f))
-        except (FileNotFoundError, json.JSONDecodeError):
-            self.seen = set()
-        logger.info("Ініціалізовано SSGAInsightsMonitor з %d переглянутими URL", len(self.seen))
-
-    def check_new(self):
-        try:
-            resp = requests.get(self.INSIGHTS_URL, headers={'User-Agent': 'Mozilla/5.0'})
-            resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            results_list = soup.find("ul", class_="results-list")
-            logger.info("Results list from requests: %s", "Found" if results_list else "Not found")
-        except Exception as e:
-            logger.error("Не вдалося отримати сторінку SSGA Insights: %s", e)
-            return []
-
-        # Перевірка, чи список <li> порожній
-        items = results_list.find_all("li", recursive=False) if results_list else []
-        logger.info("Found %d <li> items in results_list from requests", len(items))
-        if not results_list or not items:
-            logger.warning("Список статей порожній або не знайдено, використовуємо Selenium. HTML: %s", soup.prettify()[:500])
-            try:
-                options = webdriver.ChromeOptions()
-                options.add_argument("--headless")
-                options.add_argument("--disable-gpu")
-                options.add_argument("--no-sandbox")
-                options.add_argument("--disable-dev-shm-usage")
-                driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-                driver.get(self.INSIGHTS_URL)
-                time.sleep(5)
-                soup = BeautifulSoup(driver.page_source, 'html.parser')
-                driver.quit()
-                results_list = soup.find("ul", class_="results-list")
-                items = results_list.find_all("li", recursive=False) if results_list else []
-                logger.info("Results list from Selenium: %s, found %d <li> items", "Found" if results_list else "Not found", len(items))
-                if not results_list or not items:
-                    logger.error("Selenium не знайшов список статей. HTML: %s", soup.prettify()[:500])
-                    return []
-            except Exception as e:
-                logger.error("Selenium помилка: %s", e)
-                return []
-
-        new_articles = []
-        for item in items:
-            title_tag = item.find("h2")
-            title = title_tag.get_text(strip=True) if title_tag else "Без заголовка"
-            logger.info("Processing item with title: %s", title)
-
-            link_tag = item.find("a", href=True)
-            href = link_tag["href"] if link_tag else ""
-            url = href if href.startswith("http") else self.BASE_URL + href
-            logger.info("URL: %s", url)
-
-            date_tag = item.find("time")
-            raw_date = date_tag.get_text(strip=True) if date_tag else ""
-            try:
-                parsed_date = datetime.strptime(raw_date, "%B %d, %Y")
-                date = parsed_date.strftime("%H:%M %d/%m/%Y")
-            except (ValueError, TypeError):
-                try:
-                    parsed_date = datetime.strptime(raw_date, "%m/%d/%Y")
-                    date = parsed_date.strftime("%H:%M %d/%m/%Y")
-                except (ValueError, TypeError):
-                    try:
-                        parsed_date = datetime.strptime(raw_date, "%Y-%m-%d")
-                        date = parsed_date.strftime("%H:%M %d/%m/%Y")
-                    except (ValueError, TypeError):
-                        date = raw_date
-            logger.info("Date: %s", date)
-
-            source = "SSGA Insights"
-            if url and url not in self.seen:
-                with FileLock(f"{self.SEEN_URLS_FILE}.lock"):
-                    self.seen.add(url)
-                    with open(self.SEEN_URLS_FILE, "w") as f:
-                        json.dump(list(self.seen), f)
-                    logger.info("Written to %s: %s", self.SEEN_URLS_FILE, url)
-                new_articles.append({"title": title, "url": url, "date": date, "source": source})
-                logger.info("Додано нову статтю: %s", url)
-            else:
-                logger.info("URL already seen or empty: %s", url)
-
-        logger.info("Перевірено SSGA Insights, знайдено %d нових статей", len(new_articles))
-        return new_articles
 
 # --- /start handler ---
 async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -247,6 +138,9 @@ async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Bot is running. I will notify you of new research articles.")
 
 # --- Button callback ---
+from datetime import datetime
+import pytz
+
 async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -294,17 +188,20 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Content-Type": "application/json"
         }
 
+        # Конвертація дати зі статті в EEST, якщо вона в UTC
         if date and date.lower() != "n/a":
             try:
+                # Розпарсити дату у форматі HH:MM DD/MM/YYYY
                 utc_time = datetime.strptime(date, "%H:%M %d/%m/%Y")
                 utc_tz = pytz.UTC
                 utc_time = utc_tz.localize(utc_time)
-                eest_tz = pytz.timezone("Europe/Kiev")
+                eest_tz = pytz.timezone("Europe/Kiev")  # Використано Europe/Kiev як EEST
                 eest_time = utc_time.astimezone(eest_tz)
                 full_date = eest_time.strftime("%H:%M %d/%m/%Y")
             except ValueError:
-                full_date = date
+                full_date = date  # Якщо формат неправильний, залишимо як є
         else:
+            # Поточний час у EEST
             eest_tz = pytz.timezone("Europe/Kiev")
             full_date = datetime.now(eest_tz).strftime("%H:%M %d/%m/%Y")
 
@@ -340,24 +237,15 @@ async def insights_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Periodic job ---
 async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
     bot = context.bot
-    monitors = [ADMISMonitor(), SaxoMonitor(), SSGAInsightsMonitor()]
+    monitors = [ADMISMonitor(), SaxoMonitor()]
     new_articles = []
 
-    eest_tz = pytz.timezone("Europe/Kiev")
-    seen_in_cycle = set()
+    import re
+    from datetime import datetime
+    import pytz
 
-    # Очищення старих pending_articles (старше 30 днів)
-    global pending_articles
-    cutoff_date = datetime.now(eest_tz) - timedelta(days=30)
-    pending_articles = {
-        art_id: art for art_id, art in pending_articles.items()
-        if art.get("date") and (
-            not art["date"].lower() == "n/a" and
-            datetime.strptime(art["date"], "%H:%M %d/%m/%Y") > cutoff_date
-        )
-    }
-    save_articles({"pending_articles": pending_articles})
-    logger.info("Очищено pending_articles, залишилося %d записів", len(pending_articles))
+    seen_in_cycle = set()
+    eest_tz = pytz.timezone("Europe/Kiev")  # Часовий пояс EEST
 
     for mon in monitors:
         for art in mon.check_new():
@@ -365,24 +253,24 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
             if url not in seen_in_cycle:
                 seen_in_cycle.add(url)
                 title, date, source = art["title"], art["date"], art["source"]
+                
                 original_title = title
-
-                # Очищення заголовка
-                prefix_pattern = r'^(?:\w+\s*-\s*(?:\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}|\d+\s+(?:hours|days)\s+ago)\s*)*'
+                prefix_pattern = r'^(?:[A-Za-z]+\s*-\s*(?:\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}|\d+\s+(hours|days)\s+ago)\s*)*'
                 title = re.sub(prefix_pattern, '', title, flags=re.IGNORECASE).strip()
-                if not title:
-                    title = original_title
-                title = re.sub(r'(.+?)\1+', r'\1', title).strip()
+                
+                if title:
+                    title = re.sub(r'(.+?)\1+', r'\1', title).strip()
+
                 parts = title.split(".", 1)
                 if len(parts) > 1 and parts[0].strip() in parts[1]:
                     title = parts[0].strip() + "."
 
-                # Фільтр podcast/webinar у заголовку та URL
-                if "podcast" in title.lower() or "webinar" in title.lower() or "podcast" in url.lower() or "webinar" in url.lower():
+                if "podcast" in title.lower() or "webinar" in title.lower():
                     logger.info("Skipped: %s (Podcast/Webinar)", original_title)
                     continue
 
                 send_time = datetime.now(eest_tz).strftime("%H:%M %d/%m/%Y")
+
                 msg = (
                     f"📌 *New research from: {source}*\n"
                     f"📅 {send_time}\n"
@@ -400,15 +288,14 @@ async def check_sites_callback(context: ContextTypes.DEFAULT_TYPE):
     for msg, art_id in new_articles:
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("🧠 Load Insights", callback_data=f"INSIGHTS|{art_id}")]])
         if len(msg) > 4096:
-            title_end = msg.find("🔗 [Read the original]")
-            if title_end != -1:
-                msg = msg[:title_end].strip()[:4000] + f"\n🔗 [Read the original]({url})"
+            msg = msg[:4093] + "..."
         for user_id in allowed_users:
             try:
                 await bot.send_message(chat_id=user_id, text=msg, reply_markup=kb, parse_mode='Markdown')
-                logger.info("Alert sent to %d: %s", user_id, msg.split("\n")[2].replace("📰 **Title**: ", "").replace("**", ""))
+                logger.info("Alert sent to %d: %s", user_id, msg.split("\n")[2].replace("📰 **Title: ", "").replace("**", ""))
             except Exception as e:
                 logger.error("Failed to send message to %d: %s", user_id, e)
+                # Ігноруємо помилку і продовжуємо для інших користувачів
 
     save_articles({"pending_articles": pending_articles})
 
